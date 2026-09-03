@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=800, initial-scale=1.0">
+  <title>MTG Kiosk</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <main id="view-menu" class="view">
+    <h1>MTG Kiosk</h1>
+    <div class="tile-grid">
+      <button class="tile" data-view="life-counter">Life Counter</button>
+      <button class="tile" data-view="horde-mode">Horde Mode</button>
+      <button class="tile" data-view="card-lookup">Card Lookup</button>
+      <button class="tile" data-view="random-card">Random Card</button>
+      <button class="tile" data-view="settings">Settings</button>
+    </div>
+  </main>
+
+  <main id="view-life-counter" class="view hidden">
+    <p class="stub-message">Life Counter — coming in Slice 3.</p>
+    <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-horde-mode" class="view hidden">
+    <p class="stub-message">Horde Mode — coming in Slice 5.</p>
+    <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-card-lookup" class="view hidden">
+    <p class="stub-message">Card Lookup — coming in Slice 4.</p>
+    <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-random-card" class="view hidden">
+    <p class="stub-message">Random Card — coming in Slice 2.</p>
+    <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-settings" class="view hidden">
+    <h2>Settings</h2>
+    <section class="status-row">
+      <span>Printer:</span>
+      <span id="printer-status" class="badge badge-unknown">checking…</span>
+    </section>
+    <section class="status-row">
+      <span>Wifi:</span>
+      <span id="wifi-status">checking…</span>
+    </section>
+    <section class="status-row">
+      <span>Version:</span>
+      <span id="version-status">checking…</span>
+    </section>
+    <section class="status-row">
+      <span>Commit:</span>
+      <span id="commit-status">checking…</span>
+    </section>
+
+    <button id="selftest-button">Print self-test label</button>
+    <p id="selftest-result"></p>
+
+    <hr>
+
+    <button id="update-check-button">Check for updates</button>
+    <p id="update-status"></p>
+    <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+
+    <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <button id="random-card-fab" title="Random card">🎲</button>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
