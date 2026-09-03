@@ -217,7 +217,7 @@ def selftest() -> bytes:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/Scripts/python -m pytest tests/test_tspl.py -v`
-Expected: 10 passed
+Expected: 11 passed
 
 - [ ] **Step 6: Commit**
 
