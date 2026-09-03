@@ -59,3 +59,42 @@ def test_print_image_sends_bitmap_command():
     printer.print_image(Image.new("L", (8, 8), color=255))
     sent = transport.writes[0]
     assert b"BITMAP 0,0,1,8,0," in sent
+
+
+class RaisingIsPresentTransport:
+    def is_present(self) -> bool:
+        raise PermissionError("simulated stat failure")
+
+    def write(self, data: bytes) -> None:
+        raise AssertionError("write should never be reached")
+
+
+def test_is_connected_returns_false_when_is_present_raises():
+    printer = ThermalPrinter(transport=RaisingIsPresentTransport())
+    assert printer.is_connected() is False
+
+
+def test_self_test_raises_printer_error_when_is_present_raises():
+    printer = ThermalPrinter(transport=RaisingIsPresentTransport())
+    with pytest.raises(PrinterError):
+        printer.self_test()
+
+
+class NonOSErrorWriteTransport:
+    def is_present(self) -> bool:
+        return True
+
+    def write(self, data: bytes) -> None:
+        raise RuntimeError("simulated non-OSError failure")
+
+
+def test_self_test_raises_printer_error_on_non_os_error_write_failure():
+    printer = ThermalPrinter(transport=NonOSErrorWriteTransport())
+    with pytest.raises(PrinterError):
+        printer.self_test()
+
+
+def test_print_text_label_raises_printer_error_when_is_present_raises():
+    printer = ThermalPrinter(transport=RaisingIsPresentTransport())
+    with pytest.raises(PrinterError):
+        printer.print_text_label(["hi"])

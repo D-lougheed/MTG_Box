@@ -26,7 +26,10 @@ class ThermalPrinter:
         self._transport = transport or UsbLpTransport()
 
     def is_connected(self) -> bool:
-        return self._transport.is_present()
+        try:
+            return self._transport.is_present()
+        except Exception:
+            return False
 
     def self_test(self) -> None:
         self._send(tspl.selftest())
@@ -64,9 +67,11 @@ class ThermalPrinter:
         self._send(cmd)
 
     def _send(self, data: bytes) -> None:
-        if not self._transport.is_present():
-            raise PrinterError("printer not connected")
         try:
+            if not self._transport.is_present():
+                raise PrinterError("printer not connected")
             self._transport.write(data)
-        except OSError as e:
-            raise PrinterError(f"write failed: {e}") from e
+        except PrinterError:
+            raise
+        except Exception as e:
+            raise PrinterError(f"printer error: {e}") from e
