@@ -952,12 +952,16 @@ def post_update_apply() -> dict:
         apply_update(REPO_DIR)
     except UpdateError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    venv_pip = REPO_DIR / ".venv" / "bin" / "pip"
+    subprocess.run([str(venv_pip), "install", "-r", str(REPO_DIR / "requirements.txt")])
     subprocess.run(["systemd-run", "--on-active=2", "systemctl", "restart", "mtgkiosk"])
     return {"restarting": True}
 
 
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 ```
+
+*(Correction found during Task 6 review: the design spec's update data flow calls for "reinstall requirements if changed" between pull and restart, which the original Task 7 draft omitted entirely. Reinstalling unconditionally rather than diffing for a dependency change is a deliberate simplification — `pip install -r` is fast and idempotent when nothing changed, and detecting "did requirements.txt change" correctly (across a multi-commit pull) is meaningfully more code for a Slice 1 appliance that updates rarely.)*
 
 - [ ] **Step 5: Run tests to verify they pass**
 
