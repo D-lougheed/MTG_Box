@@ -1536,6 +1536,8 @@ If missing, run `udevadm info -a -n /dev/usb/lp0` (with the printer connected) a
 
 Look at the screen directly (not VNC, which shares the same framebuffer but confirm it matches). Expected: the main menu with 5 tiles, matching what Task 8 verified in a desktop browser.
 
+If Chromium never appears (blank/black screen, or `mtgkiosk-ui` restart-looping), check `journalctl -u mtgkiosk-ui --no-pager` for "cannot open display" or "Authorization required, but no authorization protocol specified" *before* assuming it's the Chromium-binary-name issue in Step 3. A system-level unit launching a GUI app as `User=admin` isn't the same as `admin`'s actual logged-in graphical session, and `Environment=DISPLAY=:0` alone is not always sufficient to authenticate to the X server depending on this Pi's autologin/display-manager configuration (found during Task 9 review, deliberately left unfixed since it couldn't be confirmed without the real Pi in front of us). If this is the failure, the fix is either adding `Environment=XAUTHORITY=<path to admin's .Xauthority>` to `mtgkiosk-ui.service` (path depends on the actual display manager in use), or converting it to a `systemctl --user` unit with `loginctl enable-linger admin`.
+
 - [ ] **Step 7: Verify Settings reflects real hardware**
 
 Tap Settings on the touchscreen. Expected: printer badge shows "connected" (green) if the printer is plugged in and powered — this exercises the real `UsbLpTransport` against `/dev/mtgprinter` for the first time. Wifi state and commit hash should also populate correctly.
@@ -1546,7 +1548,9 @@ Tap "Print self-test label." Given the parked intermittent-disconnect issue (des
 
 - [ ] **Step 9: Verify the update flow against the real remote**
 
-Make a trivial commit on the development machine (e.g., a comment tweak), push it, then on the Pi tap "Check for updates." Expected: shows "1 commit(s) behind" and reveals the "Install update & restart" button. Tap it; expected: the page becomes unreachable briefly and Chromium reconnects to the updated app after the scheduled restart.
+Make a **visibly different** commit on the development machine — e.g., change the `<h1>MTG Kiosk</h1>` text in `web/index.html` to something else temporarily — not just a comment tweak. A comment change can't actually verify this step: the update mechanism's job is to get new frontend code running in the already-loaded browser, and a Task 9 review found that restarting only the backend (`mtgkiosk`) doesn't by itself force Chromium to reload (fixed by adding `PartOf=mtgkiosk.service` to `mtgkiosk-ui.service`, but this is the step that actually proves that fix works end to end).
+
+Push the change, then on the Pi tap "Check for updates." Expected: shows "1 commit(s) behind" and reveals the "Install update & restart" button. Tap it; expected: the page goes briefly unreachable, and when it recovers, the physical screen shows the **changed text**, not just a successfully-reconnected API. If the API reconnects but the old text is still showing, the UI-restart cascade isn't working and needs investigating before this task closes out. Revert the temporary text change afterward.
 
 *(No commit step from this task on the development machine — Steps 3 and 5 may produce fixes that should be committed if the rule/service needed adjustment; use a real commit message describing what was wrong, e.g. "Fix udev rule attribute chain found during Pi deployment.")*
 
