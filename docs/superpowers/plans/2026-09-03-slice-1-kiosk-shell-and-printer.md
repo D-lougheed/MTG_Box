@@ -1552,6 +1552,12 @@ Make a trivial commit on the development machine (e.g., a comment tweak), push i
 
 ---
 
+## Known accepted issue: cosmetic scrollbar in Settings
+
+Task 8's final review round (commit `26bd8da`) found that `.settings-scroll`'s fractional height sensitivity means populating `#selftest-result` or `#update-status` with any text can trigger a 1px scrollbar, even though nothing is actually clipped. A `min-height` on those two elements would stabilize it. **Deliberately not fixed** — confirmed purely cosmetic with zero effect on control reachability (unlike the functional Back-button-unreachable bug this same task fixed twice), and Slice 1 is a bring-up slice, not the visual-polish pass. Revisit opportunistically if `web/css/style.css` is touched again for any other reason.
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
