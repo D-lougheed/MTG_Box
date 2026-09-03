@@ -1,6 +1,11 @@
 function showView(name) {
+  const target = document.getElementById(`view-${name}`);
+  if (!target) {
+    console.error(`No view for "${name}"`);
+    return;
+  }
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
-  document.getElementById(`view-${name}`).classList.remove("hidden");
+  target.classList.remove("hidden");
 }
 
 document.querySelectorAll("[data-view]").forEach((el) => {
@@ -33,24 +38,40 @@ async function refreshStatus() {
 setInterval(refreshStatus, 5000);
 refreshStatus();
 
-document.getElementById("selftest-button").addEventListener("click", async () => {
+document.getElementById("selftest-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const result = document.getElementById("selftest-result");
+  button.disabled = true;
   result.textContent = "printing…";
   try {
     const response = await fetch("/api/printer/selftest", { method: "POST" });
-    result.textContent = response.ok ? "sent" : "failed: printer not connected";
+    if (response.ok) {
+      result.textContent = "sent";
+    } else {
+      const data = await response.json().catch(() => ({}));
+      result.textContent = "failed: " + (data.detail || "printer not connected");
+    }
   } catch (err) {
     result.textContent = "failed: " + err.message;
+  } finally {
+    button.disabled = false;
   }
 });
 
-document.getElementById("update-check-button").addEventListener("click", async () => {
+document.getElementById("update-check-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const status = document.getElementById("update-status");
   const applyButton = document.getElementById("update-apply-button");
+  button.disabled = true;
   status.textContent = "checking…";
   applyButton.classList.add("hidden");
   try {
     const response = await fetch("/api/update/check");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "check failed: " + (data.detail || response.status);
+      return;
+    }
     const data = await response.json();
     if (data.up_to_date) {
       status.textContent = "up to date (" + data.local_commit.slice(0, 7) + ")";
@@ -60,11 +81,27 @@ document.getElementById("update-check-button").addEventListener("click", async (
     }
   } catch (err) {
     status.textContent = "check failed: " + err.message;
+  } finally {
+    button.disabled = false;
   }
 });
 
-document.getElementById("update-apply-button").addEventListener("click", async () => {
+document.getElementById("update-apply-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const status = document.getElementById("update-status");
+  button.disabled = true;
   status.textContent = "updating, restarting shortly…";
-  await fetch("/api/update/apply", { method: "POST" });
+  try {
+    const response = await fetch("/api/update/apply", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "update failed: " + (data.detail || response.status);
+      button.disabled = false;
+      return;
+    }
+    button.classList.add("hidden");
+  } catch (err) {
+    status.textContent = "update failed: " + err.message;
+    button.disabled = false;
+  }
 });

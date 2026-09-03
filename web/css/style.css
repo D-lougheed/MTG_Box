@@ -78,7 +78,7 @@ h2 {
   color: var(--text);
   border: none;
   border-radius: 8px;
-  padding: 10px 20px;
+  padding: 14px 20px;
   font-size: 16px;
 }
 
@@ -112,7 +112,7 @@ h2 {
 #selftest-button, #update-check-button, #update-apply-button {
   margin-top: 16px;
   align-self: flex-start;
-  padding: 10px 20px;
+  padding: 14px 20px;
   font-size: 16px;
   border: none;
   border-radius: 8px;

@@ -1150,7 +1150,7 @@ h2 {
   color: var(--text);
   border: none;
   border-radius: 8px;
-  padding: 10px 20px;
+  padding: 14px 20px;
   font-size: 16px;
 }
 
@@ -1184,7 +1184,7 @@ h2 {
 #selftest-button, #update-check-button, #update-apply-button {
   margin-top: 16px;
   align-self: flex-start;
-  padding: 10px 20px;
+  padding: 14px 20px;
   font-size: 16px;
   border: none;
   border-radius: 8px;
@@ -1209,8 +1209,13 @@ h2 {
 
 ```javascript
 function showView(name) {
+  const target = document.getElementById(`view-${name}`);
+  if (!target) {
+    console.error(`No view for "${name}"`);
+    return;
+  }
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
-  document.getElementById(`view-${name}`).classList.remove("hidden");
+  target.classList.remove("hidden");
 }
 
 document.querySelectorAll("[data-view]").forEach((el) => {
@@ -1243,24 +1248,40 @@ async function refreshStatus() {
 setInterval(refreshStatus, 5000);
 refreshStatus();
 
-document.getElementById("selftest-button").addEventListener("click", async () => {
+document.getElementById("selftest-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const result = document.getElementById("selftest-result");
+  button.disabled = true;
   result.textContent = "printing…";
   try {
     const response = await fetch("/api/printer/selftest", { method: "POST" });
-    result.textContent = response.ok ? "sent" : "failed: printer not connected";
+    if (response.ok) {
+      result.textContent = "sent";
+    } else {
+      const data = await response.json().catch(() => ({}));
+      result.textContent = "failed: " + (data.detail || "printer not connected");
+    }
   } catch (err) {
     result.textContent = "failed: " + err.message;
+  } finally {
+    button.disabled = false;
   }
 });
 
-document.getElementById("update-check-button").addEventListener("click", async () => {
+document.getElementById("update-check-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const status = document.getElementById("update-status");
   const applyButton = document.getElementById("update-apply-button");
+  button.disabled = true;
   status.textContent = "checking…";
   applyButton.classList.add("hidden");
   try {
     const response = await fetch("/api/update/check");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "check failed: " + (data.detail || response.status);
+      return;
+    }
     const data = await response.json();
     if (data.up_to_date) {
       status.textContent = "up to date (" + data.local_commit.slice(0, 7) + ")";
@@ -1270,15 +1291,33 @@ document.getElementById("update-check-button").addEventListener("click", async (
     }
   } catch (err) {
     status.textContent = "check failed: " + err.message;
+  } finally {
+    button.disabled = false;
   }
 });
 
-document.getElementById("update-apply-button").addEventListener("click", async () => {
+document.getElementById("update-apply-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const status = document.getElementById("update-status");
+  button.disabled = true;
   status.textContent = "updating, restarting shortly…";
-  await fetch("/api/update/apply", { method: "POST" });
+  try {
+    const response = await fetch("/api/update/apply", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "update failed: " + (data.detail || response.status);
+      button.disabled = false;
+      return;
+    }
+    button.classList.add("hidden");
+  } catch (err) {
+    status.textContent = "update failed: " + err.message;
+    button.disabled = false;
+  }
 });
 ```
+
+*Correction note (added during review):* Error handling, view-name guards, and in-flight button locks have been added to prevent silent failures in the update flow. When the backend returns a 502 (e.g., no git remote configured during development), the UI now displays the real error detail instead of showing "undefined commit(s) behind" or hanging forever. The `showView()` function now safely guards against missing view elements, logging to console instead of throwing. All async action buttons (self-test, update-check, update-apply) are disabled during their request and re-enabled on completion or failure, preventing double-tap requests on touchscreens.
 
 - [ ] **Step 4: Manually verify in a desktop browser**
 
