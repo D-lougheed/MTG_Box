@@ -19,7 +19,7 @@ That full scope is a platform, not a feature, so it is decomposed into five slic
 | Printer | miemieyo M4202 / M4201, 4x6 direct thermal, 203 DPI, monochrome, USB, self-powered |
 | OS | Raspberry Pi OS Desktop (64-bit) |
 
-Useful derived constant: at 203 DPI a real Magic card (63 x 88 mm) is **503 x 703 dots**, which fits comfortably on a 4" roll.
+Useful derived constant: a real Magic card (63 x 88 mm) is 503 x 703 dots at 203 DPI — reference only. **Actual production stock for this project is 3in x 2in (609 x 406 dots at 203 DPI), confirmed 2026-09-03**: a landscape overlay label applied on top of an existing bulk/common card, not a full-card replica. This locks in the print path as text-only by design (name, mana cost, type line, rules text), not an attempted card-art reproduction.
 
 ## Goals
 
@@ -197,11 +197,18 @@ The self-test label is defined as: a text line reading `MTG KIOSK OK`, the curre
 
 These do not block starting implementation, because the transport abstraction contains them. They do block completing `transport.py`.
 
-1. **SSH is not enabled on the Pi.** Needs `sudo systemctl enable --now ssh`, plus the username. Pi is reachable at `192.168.1.96`.
-2. **Printer enumeration is uncharacterized.** Needs `lsusb` and `dmesg | tail -30` with the printer connected, to determine whether `usblp` binds (giving `/dev/usb/lp0`) or whether it presents as a vendor-class device requiring pyusb.
-3. **Printer command language is presumed TSPL2, not confirmed.** miemieyo publishes no Linux documentation. Verified empirically by sending a TSPL test string; ESC/POS is the fallback hypothesis.
+1. ~~SSH is not enabled on the Pi.~~ **Resolved 2026-09-03.** SSH and VNC are enabled. Host `192.168.1.96`, user `admin`. Key-based access being set up now via a dedicated `mtgkiosk_pi` keypair (see below) rather than the default password.
+2. ~~Printer enumeration is uncharacterized.~~ **Resolved 2026-09-03.** Confirmed via `dmesg`: kernel `usblp` binds directly — `usblp0: USB Bidirectional printer dev 3 if 0 alt 0 proto 2 vid 0x2D37 pid 0x81F7`. This is the easy path from the design: `UsbLpTransport` writing to `/dev/usb/lp0`, no `pyusb` required. `lsusb` confirms the device as `2d37:81f7 Zhuhai Poskey Technology Co.,Ltd M4202` (Poskey is the OEM behind the miemieyo-branded unit).
+3. ~~Printer command language is presumed TSPL2, not yet confirmed.~~ **Resolved 2026-09-03.** Confirmed via the printer's own `SELFTEST` command, which produced a standard TSC-format diagnostic label (`Code page` / `Speed` / `Density` / `size` / `gap` / `reference` fields). Also revealed the printer's default measurement unit is **millimeters, not inches** — an initial hand-built test using unitless `SIZE 4,6` (intending inches) was silently interpreted as 4mm x 6mm, producing a tiny declared print area that a text position of (100,100) dots fell entirely outside of. **`tspl.py` must always emit explicit unit suffixes** (`SIZE 101.6 mm,152.4 mm`, not `SIZE 4,6`) rather than relying on the printer's ambient default. Diagnostic label also reports code page **PC936** (a Chinese/GBK-family code page) as the printer's default text encoding — irrelevant for plain-ASCII card names, but relevant if `raster.py`/`tspl.py` ever needs to emit accented characters (e.g. card names with diacritics); revisit via TSPL2's `CODEPAGE` command if that comes up in Slice 2.
 4. **The git remote does not exist yet.** The update button requires one. Needs to be created and the Pi given read access.
-5. **The udev rule is written generically** pending a known VID:PID; it should be pinned once `lsusb` output is available.
+5. **The udev rule can now be pinned exactly**, since the VID:PID is known: `2d37:81f7`.
+6. **Direct SSH from the development machine is blocked, cause unconfirmed.** `sshd` is healthy on the Pi (confirmed via loopback `ssh admin@localhost`) and no firewall exists on either the Pi (no `ufw`/`iptables`/`fail2ban`/`nft` rules) or the Windows dev machine (no VPN/EDR process, zero outbound firewall block rules, Defender Network Protection disabled, direct on-link route to the Pi's subnet). The connection is actively refused (immediate RST) rather than timing out, which points at the router/AP possibly injecting the reset — untested. **Decision: not worth blocking on.** All Slice 1 development proceeds via commands relayed through the existing VNC session, which has proven reliable for every step so far. Revisit only if VNC-relay becomes a real friction point.
+
+7. **Printer exhibits intermittent USB disconnects under sustained load** (motor and heater active together), confirmed via `dmesg`: it reconnects as fast as 14ms after a drop — too fast to be a physical unplug, pointing at an electrical/signal issue. The power-starvation hypothesis was ruled out (printer has its own separate power supply, confirmed connected). Untested candidate causes: a marginal/unshielded USB data cable, a ground loop between the Pi's and printer's independent power supplies, or a firmware quirk on this OEM board (identifies internally as `GEZHI`, not `Poskey`, despite the `2d37:81f7` VID:PID — likely a relabeled shared reference design). **Deferred by decision 2026-09-03** — proceeding to Slice 1 software work; revisit once back on the printer, testing at the real 3in x 2in label size rather than the 4in x 6in stock used during initial bring-up.
+
+### Security note
+
+The Pi's login is currently the default `admin` / `admin`, with SSH now reachable on the LAN. Worth changing once key-based auth is confirmed working — at that point the password stops being needed day to day anyway, so there's no convenience cost to rotating it. Not treated as blocking; noted here so it doesn't get lost.
 
 ## Slice roadmap
 
@@ -220,4 +227,5 @@ Context only. Each later slice gets its own spec.
 - Scryfall bulk data as of 2026-09-02: Oracle Cards 24.5 MB, Default Cards 78 MB, All Cards 392 MB, Rulings 5 MB — all compressed. The 10 GB offline budget is not a constraint for card *text*.
 - Bulk data contains image **URLs, not images**. Full offline art would be roughly 11 GB and is discouraged by Scryfall. Images are therefore an on-demand cached nicety for the lookup screen only.
 - The printer is monochrome 203 DPI, so **the print path never needs card art** — card text renders crisply, card images do not.
+- Production label size is confirmed as **3in x 2in (609 x 406 dots at 203 DPI)**, not full card size — an overlay label for an existing bulk card. Slice 2's print layout should design for this canvas, not a 63x88mm card-sized one.
 - 8 players on 800x480 is a 4x2 grid at ~200x240 px each, on a ~2-point digitizer. Simultaneous input by eight people is not physically possible; the life counter design must account for this.
