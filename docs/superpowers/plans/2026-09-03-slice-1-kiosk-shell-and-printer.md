@@ -409,9 +409,13 @@ class UsbLpTransport:
         return self._path.exists()
 
     def write(self, data: bytes) -> None:
+        if not self._path.exists():
+            raise FileNotFoundError(str(self._path))
         with open(self._path, "wb") as f:
             f.write(data)
 ```
+
+*(Correction found during implementation: a plain `open(path, "wb")` does not raise `FileNotFoundError` for a missing file when its parent directory exists — "wb" mode creates it. The explicit existence check above is required for `test_write_raises_when_device_missing` to actually pass, and is also the semantically correct behavior: writing to a missing printer device node should fail clearly, not silently create a stray regular file in its place.)*
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -537,7 +541,10 @@ class ThermalPrinter:
         self._transport = transport or UsbLpTransport()
 
     def is_connected(self) -> bool:
-        return self._transport.is_present()
+        try:
+            return self._transport.is_present()
+        except Exception:
+            return False
 
     def self_test(self) -> None:
         self._send(tspl.selftest())
@@ -575,13 +582,17 @@ class ThermalPrinter:
         self._send(cmd)
 
     def _send(self, data: bytes) -> None:
-        if not self._transport.is_present():
-            raise PrinterError("printer not connected")
         try:
+            if not self._transport.is_present():
+                raise PrinterError("printer not connected")
             self._transport.write(data)
-        except OSError as e:
-            raise PrinterError(f"write failed: {e}") from e
+        except PrinterError:
+            raise
+        except Exception as e:
+            raise PrinterError(f"printer error: {e}") from e
 ```
+
+*(Correction found during review: the code as originally drafted only wrapped `write()` in `except OSError`, leaving `is_present()` unguarded in both `is_connected()` and `_send()`. Since `is_connected()` backs the `/api/status` endpoint the frontend polls every 5s, an unguarded exception there would 500 that endpoint instead of showing the graceful "disconnected" badge the design spec promises. Broadened to `except Exception` — with `PrinterError` re-raised first to avoid double-wrapping — so the module's own stated invariant, "a printer problem must never take down the kiosk," actually holds for any transport failure, not just `OSError` subtypes.)*
 
 - [ ] **Step 4: Run tests to verify they pass**
 
