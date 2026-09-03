@@ -1,0 +1,14 @@
+[Unit]
+Description=MTG Kiosk backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/mtg-kiosk
+ExecStart=/home/admin/mtg-kiosk/.venv/bin/uvicorn mtgkiosk.app:app --host 127.0.0.1 --port 8080 --app-dir src
+Restart=always
+RestartSec=2
+User=admin
+
+[Install]
+WantedBy=multi-user.target

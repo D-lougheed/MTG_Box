@@ -1,0 +1,16 @@
+[Unit]
+Description=MTG Kiosk Chromium UI
+After=mtgkiosk.service graphical.target
+Requires=mtgkiosk.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --check-for-update-interval=31536000 http://127.0.0.1:8080
+Restart=always
+RestartSec=2
+User=admin
+
+[Install]
+WantedBy=graphical.target
