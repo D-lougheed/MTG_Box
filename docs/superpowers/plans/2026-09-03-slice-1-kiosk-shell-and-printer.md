@@ -1218,6 +1218,11 @@ function showView(name) {
   target.classList.remove("hidden");
 }
 
+function firstLine(text, maxLength = 80) {
+  const line = String(text).split("\n")[0];
+  return line.length > maxLength ? line.slice(0, maxLength - 1) + "…" : line;
+}
+
 document.querySelectorAll("[data-view]").forEach((el) => {
   el.addEventListener("click", () => showView(el.dataset.view));
 });
@@ -1259,7 +1264,7 @@ document.getElementById("selftest-button").addEventListener("click", async (even
       result.textContent = "sent";
     } else {
       const data = await response.json().catch(() => ({}));
-      result.textContent = "failed: " + (data.detail || "printer not connected");
+      result.textContent = "failed: " + (data.detail ? firstLine(data.detail) : "printer not connected");
     }
   } catch (err) {
     result.textContent = "failed: " + err.message;
@@ -1279,7 +1284,7 @@ document.getElementById("update-check-button").addEventListener("click", async (
     const response = await fetch("/api/update/check");
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      status.textContent = "check failed: " + (data.detail || response.status);
+      status.textContent = "check failed: " + firstLine(data.detail || response.status);
       return;
     }
     const data = await response.json();
@@ -1305,7 +1310,7 @@ document.getElementById("update-apply-button").addEventListener("click", async (
     const response = await fetch("/api/update/apply", { method: "POST" });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      status.textContent = "update failed: " + (data.detail || response.status);
+      status.textContent = "update failed: " + firstLine(data.detail || response.status);
       button.disabled = false;
       return;
     }
@@ -1317,7 +1322,7 @@ document.getElementById("update-apply-button").addEventListener("click", async (
 });
 ```
 
-*Correction note (added during review):* Error handling, view-name guards, and in-flight button locks have been added to prevent silent failures in the update flow. When the backend returns a 502 (e.g., no git remote configured during development), the UI now displays the real error detail instead of showing "undefined commit(s) behind" or hanging forever. The `showView()` function now safely guards against missing view elements, logging to console instead of throwing. All async action buttons (self-test, update-check, update-apply) are disabled during their request and re-enabled on completion or failure, preventing double-tap requests on touchscreens.
+*Correction note (added during review):* Error handling, view-name guards, in-flight button locks, and message length capping have been added. When the backend returns a 502 (e.g., no git remote configured during development), the UI now displays a single-line, capped error message instead of raw multi-line git stderr that overflows the screen. The `firstLine()` helper extracts the first line of any error and caps it at 80 characters, preventing long backend errors from pushing the Settings view beyond 480px and clipping the Back button. The `showView()` function safely guards against missing view elements, and all async action buttons (self-test, update-check, update-apply) are disabled during requests and re-enabled on completion, preventing double-tap requests.
 
 - [ ] **Step 4: Manually verify in a desktop browser**
 
@@ -1331,6 +1336,9 @@ Open `http://127.0.0.1:8080` in a browser sized to 800x480. Check by hand:
 - The 🎲 button (bottom-right) shows the Random Card stub from any view
 - Settings shows `printer_connected: false` as a red "disconnected" badge (no printer attached to this dev machine) — this is correct, not a bug
 - The commit/version fields populate
+- Update-check and update-apply with no git remote (502 error) each show a real, single-line error message capped at ~80 chars, NOT a multi-line stderr dump or "undefined"; the Back button is fully visible and not clipped
+- A bad view name (e.g., typing `showView("nonexistent")` in the browser console) logs a console error and does not blank the screen or throw an uncaught exception
+- Rapid double-tapping any action button (self-test, update-check, update-apply) fires only one concurrent request; the button is disabled during the request and re-enabled when it completes
 
 - [ ] **Step 5: Commit**
 

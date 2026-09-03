@@ -8,6 +8,11 @@ function showView(name) {
   target.classList.remove("hidden");
 }
 
+function firstLine(text, maxLength = 80) {
+  const line = String(text).split("\n")[0];
+  return line.length > maxLength ? line.slice(0, maxLength - 1) + "…" : line;
+}
+
 document.querySelectorAll("[data-view]").forEach((el) => {
   el.addEventListener("click", () => showView(el.dataset.view));
 });
@@ -49,7 +54,7 @@ document.getElementById("selftest-button").addEventListener("click", async (even
       result.textContent = "sent";
     } else {
       const data = await response.json().catch(() => ({}));
-      result.textContent = "failed: " + (data.detail || "printer not connected");
+      result.textContent = "failed: " + (data.detail ? firstLine(data.detail) : "printer not connected");
     }
   } catch (err) {
     result.textContent = "failed: " + err.message;
@@ -69,7 +74,7 @@ document.getElementById("update-check-button").addEventListener("click", async (
     const response = await fetch("/api/update/check");
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      status.textContent = "check failed: " + (data.detail || response.status);
+      status.textContent = "check failed: " + firstLine(data.detail || response.status);
       return;
     }
     const data = await response.json();
@@ -95,7 +100,7 @@ document.getElementById("update-apply-button").addEventListener("click", async (
     const response = await fetch("/api/update/apply", { method: "POST" });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      status.textContent = "update failed: " + (data.detail || response.status);
+      status.textContent = "update failed: " + firstLine(data.detail || response.status);
       button.disabled = false;
       return;
     }
