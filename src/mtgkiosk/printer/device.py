@@ -7,12 +7,15 @@ re-raised as PrinterError; nothing upstream ever sees a raw OSError.
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from PIL import Image
 
 from . import raster, tspl
 from .transport import Transport, UsbLpTransport
+
+logger = logging.getLogger(__name__)
 
 LABEL_WIDTH_MM = 76.2  # 3in
 LABEL_HEIGHT_MM = 50.8  # 2in
@@ -26,7 +29,7 @@ class PrinterError(Exception):
 class ThermalPrinter:
     def __init__(self, transport: Transport | None = None):
         self._transport = transport or UsbLpTransport()
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # serializes writes across concurrent requests to avoid interleaved output on the physical device
 
     def is_connected(self) -> bool:
         try:
@@ -78,4 +81,5 @@ class ThermalPrinter:
             except PrinterError:
                 raise
             except Exception as e:
+                logger.warning("printer write failed: %s", e)
                 raise PrinterError(f"printer error: {e}") from e

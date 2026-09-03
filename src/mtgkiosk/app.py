@@ -68,7 +68,6 @@ def post_printer_selftest(printer: ThermalPrinter = Depends(get_printer)) -> dic
     try:
         printer.self_test()
     except PrinterError as e:
-        logger.warning("self-test failed: %s", e)
         raise HTTPException(status_code=503, detail=str(e)) from e
     return {"ok": True}
 
