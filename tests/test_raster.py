@@ -36,3 +36,10 @@ def test_pack_image_without_dither_uses_hard_threshold():
     img = Image.new("L", (8, 1), color=127)
     _, _, data = raster.pack_image(img, dither=False)
     assert data == bytes([0xFF])
+
+
+def test_pack_image_with_dither_differs_from_hard_threshold():
+    img = Image.new("L", (8, 1), color=127)
+    _, _, dithered = raster.pack_image(img, dither=True)
+    _, _, hard = raster.pack_image(img, dither=False)
+    assert dithered != hard
