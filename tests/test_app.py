@@ -57,3 +57,10 @@ def test_update_check_returns_502_on_git_error(tmp_path, monkeypatch):
     client = TestClient(app_module.app)
     response = client.get("/api/update/check")
     assert response.status_code == 502
+
+
+def test_update_apply_returns_502_on_git_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "REPO_DIR", tmp_path)
+    client = TestClient(app_module.app)
+    response = client.post("/api/update/apply")
+    assert response.status_code == 502

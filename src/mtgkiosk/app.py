@@ -6,6 +6,7 @@ deploy/mtgkiosk.service, not here.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -16,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .printer.device import PrinterError, ThermalPrinter
 from .updater import UpdateError, apply as apply_update, check as check_update
+
+logger = logging.getLogger(__name__)
 
 REPO_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -65,6 +68,7 @@ def post_printer_selftest(printer: ThermalPrinter = Depends(get_printer)) -> dic
     try:
         printer.self_test()
     except PrinterError as e:
+        logger.warning("self-test failed: %s", e)
         raise HTTPException(status_code=503, detail=str(e)) from e
     return {"ok": True}
 
@@ -74,6 +78,7 @@ def get_update_check() -> dict:
     try:
         status = check_update(REPO_DIR)
     except UpdateError as e:
+        logger.warning("update check failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {
         "up_to_date": status.up_to_date,
@@ -88,9 +93,13 @@ def post_update_apply() -> dict:
     try:
         apply_update(REPO_DIR)
     except UpdateError as e:
+        logger.warning("update apply failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     venv_pip = REPO_DIR / ".venv" / "bin" / "pip"
-    subprocess.run([str(venv_pip), "install", "-r", str(REPO_DIR / "requirements.txt")])
+    result = subprocess.run([str(venv_pip), "install", "-r", str(REPO_DIR / "requirements.txt")])
+    if result.returncode != 0:
+        logger.error("pip install failed after update pull (returncode %s); aborting restart", result.returncode)
+        raise HTTPException(status_code=502, detail="dependency install failed after update; restart aborted")
     subprocess.run(["systemd-run", "--on-active=2", "systemctl", "restart", "mtgkiosk"])
     return {"restarting": True}
 

@@ -7,6 +7,8 @@ re-raised as PrinterError; nothing upstream ever sees a raw OSError.
 
 from __future__ import annotations
 
+import threading
+
 from PIL import Image
 
 from . import raster, tspl
@@ -24,6 +26,7 @@ class PrinterError(Exception):
 class ThermalPrinter:
     def __init__(self, transport: Transport | None = None):
         self._transport = transport or UsbLpTransport()
+        self._lock = threading.Lock()
 
     def is_connected(self) -> bool:
         try:
@@ -67,11 +70,12 @@ class ThermalPrinter:
         self._send(cmd)
 
     def _send(self, data: bytes) -> None:
-        try:
-            if not self._transport.is_present():
-                raise PrinterError("printer not connected")
-            self._transport.write(data)
-        except PrinterError:
-            raise
-        except Exception as e:
-            raise PrinterError(f"printer error: {e}") from e
+        with self._lock:
+            try:
+                if not self._transport.is_present():
+                    raise PrinterError("printer not connected")
+                self._transport.write(data)
+            except PrinterError:
+                raise
+            except Exception as e:
+                raise PrinterError(f"printer error: {e}") from e

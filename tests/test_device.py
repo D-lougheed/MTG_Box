@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 from PIL import Image
 
@@ -98,3 +101,38 @@ def test_print_text_label_raises_printer_error_when_is_present_raises():
     printer = ThermalPrinter(transport=RaisingIsPresentTransport())
     with pytest.raises(PrinterError):
         printer.print_text_label(["hi"])
+
+
+class SlowTransport:
+    def __init__(self):
+        self.present = True
+        self.events = []
+        self._events_lock = threading.Lock()
+
+    def is_present(self):
+        return self.present
+
+    def write(self, data):
+        thread_name = threading.current_thread().name
+        with self._events_lock:
+            self.events.append((thread_name, "start"))
+        time.sleep(0.05)
+        with self._events_lock:
+            self.events.append((thread_name, "end"))
+
+
+def test_send_is_serialized_across_threads():
+    transport = SlowTransport()
+    printer = ThermalPrinter(transport=transport)
+
+    t1 = threading.Thread(target=printer.self_test, name="t1")
+    t2 = threading.Thread(target=printer.self_test, name="t2")
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert transport.events[0][1] == "start"
+    assert transport.events[1] == (transport.events[0][0], "end")
+    assert transport.events[2][1] == "start"
+    assert transport.events[3] == (transport.events[2][0], "end")
