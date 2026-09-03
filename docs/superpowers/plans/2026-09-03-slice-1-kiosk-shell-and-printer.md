@@ -1030,32 +1030,34 @@ Plain HTML/CSS/JS, no build step, matching the design's update-mechanism-driven 
   </main>
 
   <main id="view-settings" class="view hidden">
-    <h2>Settings</h2>
-    <section class="status-row">
-      <span>Printer:</span>
-      <span id="printer-status" class="badge badge-unknown">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Wifi:</span>
-      <span id="wifi-status">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Version:</span>
-      <span id="version-status">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Commit:</span>
-      <span id="commit-status">checking…</span>
-    </section>
+    <div class="settings-scroll">
+      <h2>Settings</h2>
+      <section class="status-row">
+        <span>Printer:</span>
+        <span id="printer-status" class="badge badge-unknown">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Wifi:</span>
+        <span id="wifi-status">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Version:</span>
+        <span id="version-status">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Commit:</span>
+        <span id="commit-status">checking…</span>
+      </section>
 
-    <button id="selftest-button">Print self-test label</button>
-    <p id="selftest-result"></p>
+      <button id="selftest-button">Print self-test label</button>
+      <p id="selftest-result"></p>
 
-    <hr>
+      <hr>
 
-    <button id="update-check-button">Check for updates</button>
-    <p id="update-status"></p>
-    <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+      <button id="update-check-button">Check for updates</button>
+      <p id="update-status"></p>
+      <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+    </div>
 
     <button class="back-button" data-view="menu">Back</button>
   </main>
@@ -1101,6 +1103,12 @@ html, body {
   padding: 24px;
   display: flex;
   flex-direction: column;
+}
+
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .hidden {
@@ -1220,7 +1228,10 @@ function showView(name) {
 
 function firstLine(text, maxLength = 80) {
   const line = String(text).split("\n")[0];
-  return line.length > maxLength ? line.slice(0, maxLength - 1) + "…" : line;
+  if (line.length <= maxLength) return line;
+  const headLength = 30;
+  const tailLength = maxLength - headLength - 1;
+  return line.slice(0, headLength) + "…" + line.slice(line.length - tailLength);
 }
 
 document.querySelectorAll("[data-view]").forEach((el) => {
@@ -1267,7 +1278,7 @@ document.getElementById("selftest-button").addEventListener("click", async (even
       result.textContent = "failed: " + (data.detail ? firstLine(data.detail) : "printer not connected");
     }
   } catch (err) {
-    result.textContent = "failed: " + err.message;
+    result.textContent = "failed: " + firstLine(err.message);
   } finally {
     button.disabled = false;
   }
@@ -1295,7 +1306,7 @@ document.getElementById("update-check-button").addEventListener("click", async (
       applyButton.classList.remove("hidden");
     }
   } catch (err) {
-    status.textContent = "check failed: " + err.message;
+    status.textContent = "check failed: " + firstLine(err.message);
   } finally {
     button.disabled = false;
   }
@@ -1316,13 +1327,13 @@ document.getElementById("update-apply-button").addEventListener("click", async (
     }
     button.classList.add("hidden");
   } catch (err) {
-    status.textContent = "update failed: " + err.message;
+    status.textContent = "update failed: " + firstLine(err.message);
     button.disabled = false;
   }
 });
 ```
 
-*Correction note (added during review):* Error handling, view-name guards, in-flight button locks, and message length capping have been added. When the backend returns a 502 (e.g., no git remote configured during development), the UI now displays a single-line, capped error message instead of raw multi-line git stderr that overflows the screen. The `firstLine()` helper extracts the first line of any error and caps it at 80 characters, preventing long backend errors from pushing the Settings view beyond 480px and clipping the Back button. The `showView()` function safely guards against missing view elements, and all async action buttons (self-test, update-check, update-apply) are disabled during requests and re-enabled on completion, preventing double-tap requests.
+*Correction note (added during review):* Settings view now scrolls internally while keeping the Back button pinned and always visible. The `.settings-scroll` container (flex: 1, overflow-y: auto, min-height: 0) wraps all Settings content except the Back button, allowing the view to remain scrollable when an update is available and the apply button is revealed. Error messages are capped to a single line (first line only) at 80 chars max, with improved `firstLine()` function keeping both start and end of long messages (30 chars + "…" + tail). All three error catch blocks now use `firstLine()` on `err.message` too. The `showView()` function guards against missing view elements, and all async action buttons are disabled during requests and re-enabled on completion.
 
 - [ ] **Step 4: Manually verify in a desktop browser**
 
@@ -1339,6 +1350,7 @@ Open `http://127.0.0.1:8080` in a browser sized to 800x480. Check by hand:
 - Update-check and update-apply with no git remote (502 error) each show a real, single-line error message capped at ~80 chars, NOT a multi-line stderr dump or "undefined"; the Back button is fully visible and not clipped
 - A bad view name (e.g., typing `showView("nonexistent")` in the browser console) logs a console error and does not blank the screen or throw an uncaught exception
 - Rapid double-tapping any action button (self-test, update-check, update-apply) fires only one concurrent request; the button is disabled during the request and re-enabled when it completes
+- When an update is actually available, revealing the "Install update & restart" button does not hide or clip the Back button — it remains fully visible and clickable at the bottom of the screen because it's pinned outside the scrollable `.settings-scroll` container
 
 - [ ] **Step 5: Commit**
 

@@ -31,6 +31,12 @@ html, body {
   flex-direction: column;
 }
 
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .hidden {
   display: none !important;
 }

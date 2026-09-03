@@ -10,7 +10,10 @@ function showView(name) {
 
 function firstLine(text, maxLength = 80) {
   const line = String(text).split("\n")[0];
-  return line.length > maxLength ? line.slice(0, maxLength - 1) + "…" : line;
+  if (line.length <= maxLength) return line;
+  const headLength = 30;
+  const tailLength = maxLength - headLength - 1;
+  return line.slice(0, headLength) + "…" + line.slice(line.length - tailLength);
 }
 
 document.querySelectorAll("[data-view]").forEach((el) => {
@@ -57,7 +60,7 @@ document.getElementById("selftest-button").addEventListener("click", async (even
       result.textContent = "failed: " + (data.detail ? firstLine(data.detail) : "printer not connected");
     }
   } catch (err) {
-    result.textContent = "failed: " + err.message;
+    result.textContent = "failed: " + firstLine(err.message);
   } finally {
     button.disabled = false;
   }
@@ -85,7 +88,7 @@ document.getElementById("update-check-button").addEventListener("click", async (
       applyButton.classList.remove("hidden");
     }
   } catch (err) {
-    status.textContent = "check failed: " + err.message;
+    status.textContent = "check failed: " + firstLine(err.message);
   } finally {
     button.disabled = false;
   }
@@ -106,7 +109,7 @@ document.getElementById("update-apply-button").addEventListener("click", async (
     }
     button.classList.add("hidden");
   } catch (err) {
-    status.textContent = "update failed: " + err.message;
+    status.textContent = "update failed: " + firstLine(err.message);
     button.disabled = false;
   }
 });

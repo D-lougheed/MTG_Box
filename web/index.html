@@ -39,32 +39,34 @@
   </main>
 
   <main id="view-settings" class="view hidden">
-    <h2>Settings</h2>
-    <section class="status-row">
-      <span>Printer:</span>
-      <span id="printer-status" class="badge badge-unknown">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Wifi:</span>
-      <span id="wifi-status">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Version:</span>
-      <span id="version-status">checking…</span>
-    </section>
-    <section class="status-row">
-      <span>Commit:</span>
-      <span id="commit-status">checking…</span>
-    </section>
+    <div class="settings-scroll">
+      <h2>Settings</h2>
+      <section class="status-row">
+        <span>Printer:</span>
+        <span id="printer-status" class="badge badge-unknown">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Wifi:</span>
+        <span id="wifi-status">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Version:</span>
+        <span id="version-status">checking…</span>
+      </section>
+      <section class="status-row">
+        <span>Commit:</span>
+        <span id="commit-status">checking…</span>
+      </section>
 
-    <button id="selftest-button">Print self-test label</button>
-    <p id="selftest-result"></p>
+      <button id="selftest-button">Print self-test label</button>
+      <p id="selftest-result"></p>
 
-    <hr>
+      <hr>
 
-    <button id="update-check-button">Check for updates</button>
-    <p id="update-status"></p>
-    <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+      <button id="update-check-button">Check for updates</button>
+      <p id="update-status"></p>
+      <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+    </div>
 
     <button class="back-button" data-view="menu">Back</button>
   </main>
