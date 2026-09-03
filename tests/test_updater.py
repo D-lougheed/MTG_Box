@@ -67,3 +67,14 @@ def test_apply_raises_on_diverged_local_history(tmp_path):
 
     with pytest.raises(UpdateError):
         apply(local)
+
+
+def test_check_counts_multiple_commits_behind(tmp_path):
+    remote, local = _init_remote_and_clone(tmp_path)
+    for i in range(3):
+        (remote / "file.txt").write_text(f"v{i}")
+        _git(remote, "add", "file.txt")
+        _git(remote, "commit", "-q", "-m", f"commit {i}")
+
+    status = check(local)
+    assert status.commits_behind == 3

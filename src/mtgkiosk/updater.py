@@ -7,6 +7,7 @@ whatever was there, per the Slice 1 design spec's error-handling table.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,13 @@ from pathlib import Path
 
 class UpdateError(Exception):
     pass
+
+
+_CREDENTIAL_RE = re.compile(r"://[^/\s@]+@")
+
+
+def _scrub(message: str) -> str:
+    return _CREDENTIAL_RE.sub("://***@", message)
 
 
 @dataclass
@@ -24,14 +32,18 @@ class UpdateStatus:
     commits_behind: int
 
 
-def _run(repo_dir: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repo_dir), *args],
-        capture_output=True,
-        text=True,
-    )
+def _run(repo_dir: Path, *args: str, timeout: float = 15) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise UpdateError(_scrub(f"git {' '.join(args)} timed out after {timeout}s")) from e
     if result.returncode != 0:
-        raise UpdateError(result.stderr.strip())
+        raise UpdateError(_scrub(result.stderr.strip()))
     return result.stdout.strip()
 
 
