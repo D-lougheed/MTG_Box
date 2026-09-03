@@ -47,3 +47,13 @@ def test_print_label_explicit_counts():
 
 def test_selftest():
     assert tspl.selftest() == b"SELFTEST\r\n"
+
+
+def test_text_escapes_trailing_backslash_before_closing_quote():
+    result = tspl.text(0, 0, "3", 0, 1, 1, "trailing backslash\\")
+    assert result == b'TEXT 0,0,"3",0,1,1,"trailing backslash\\\\"\r\n'
+
+
+def test_text_escapes_backslash_before_quote_when_adjacent():
+    result = tspl.text(0, 0, "3", 0, 1, 1, 'back\\slash and "quote"')
+    assert result == b'TEXT 0,0,"3",0,1,1,"back\\\\slash and \\"quote\\""\r\n'

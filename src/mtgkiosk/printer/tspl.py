@@ -24,7 +24,7 @@ def cls() -> bytes:
 
 
 def text(x: int, y: int, font: str, rotation: int, x_mult: int, y_mult: int, content: str) -> bytes:
-    escaped = content.replace('"', '\\"')
+    escaped = content.replace("\\", "\\\\").replace('"', '\\"')
     return f'TEXT {x},{y},"{font}",{rotation},{x_mult},{y_mult},"{escaped}"\r\n'.encode("ascii")
 
 
