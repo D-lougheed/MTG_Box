@@ -78,7 +78,8 @@ class ThermalPrinter:
                 if not self._transport.is_present():
                     raise PrinterError("printer not connected")
                 self._transport.write(data)
-            except PrinterError:
+            except PrinterError as e:
+                logger.warning("printer write failed: %s", e)
                 raise
             except Exception as e:
                 logger.warning("printer write failed: %s", e)

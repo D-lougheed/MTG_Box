@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 
@@ -136,3 +137,19 @@ def test_send_is_serialized_across_threads():
     assert transport.events[1] == (transport.events[0][0], "end")
     assert transport.events[2][1] == "start"
     assert transport.events[3] == (transport.events[2][0], "end")
+
+
+def test_send_logs_warning_on_write_failure(caplog):
+    printer = ThermalPrinter(transport=FakeTransport(fail=True))
+    with caplog.at_level(logging.WARNING, logger="mtgkiosk.printer.device"):
+        with pytest.raises(PrinterError):
+            printer.self_test()
+    assert any("printer write failed" in r.message for r in caplog.records)
+
+
+def test_send_logs_warning_when_disconnected(caplog):
+    printer = ThermalPrinter(transport=FakeTransport(present=False))
+    with caplog.at_level(logging.WARNING, logger="mtgkiosk.printer.device"):
+        with pytest.raises(PrinterError):
+            printer.self_test()
+    assert any("printer write failed" in r.message for r in caplog.records)
