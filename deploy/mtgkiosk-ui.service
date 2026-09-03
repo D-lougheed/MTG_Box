@@ -2,12 +2,13 @@
 Description=MTG Kiosk Chromium UI
 After=mtgkiosk.service graphical.target
 Requires=mtgkiosk.service
+PartOf=mtgkiosk.service
 
 [Service]
 Type=simple
 Environment=DISPLAY=:0
-ExecStartPre=/bin/sleep 2
-ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --check-for-update-interval=31536000 http://127.0.0.1:8080
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && exit 0; sleep 0.5; done; exit 1'
+ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-session-crashed-bubble --no-first-run --check-for-update-interval=31536000 http://127.0.0.1:8080
 Restart=always
 RestartSec=2
 User=admin

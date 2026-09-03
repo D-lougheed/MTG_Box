@@ -9,6 +9,7 @@ ExecStart=/home/admin/mtg-kiosk/.venv/bin/uvicorn mtgkiosk.app:app --host 127.0.
 Restart=always
 RestartSec=2
 User=admin
+SupplementaryGroups=lp
 
 [Install]
 WantedBy=multi-user.target
