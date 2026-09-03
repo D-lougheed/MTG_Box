@@ -17,7 +17,14 @@ class UpdateError(Exception):
     pass
 
 
-_CREDENTIAL_RE = re.compile(r"://[^/\s@]+@")
+# Known limitation: an unescaped "/" anywhere in the credential portion
+# (common in base64-alphabet tokens) breaks the match boundary entirely,
+# causing zero substitutions rather than a partial scrub. No text-scrubbing
+# approach fully resolves this. In practice, git's own error formatting
+# already strips credentials from most messages before they reach here
+# (transport_anonymize_url) - this scrubber is defense in depth, not the
+# only safeguard.
+_CREDENTIAL_RE = re.compile(r"://[^/\s]+@")
 
 
 def _scrub(message: str) -> str:
@@ -33,6 +40,18 @@ class UpdateStatus:
 
 
 def _run(repo_dir: Path, *args: str, timeout: float = 15) -> str:
+    """Run a git command, capturing output.
+
+    Known limitation: `timeout` bounds subprocess.run()'s wait on the
+    direct git process, but a real network hang (e.g. a black-holed
+    remote) can spawn a grandchild transport process that inherits the
+    stdio pipes and isn't killed by this timeout - actual wait time in
+    that specific case is bounded by the OS's TCP-level retry timeout
+    instead, not this parameter. Fixing properly requires killing the
+    whole process group (platform-specific, or a psutil dependency),
+    which isn't worth the added complexity for this appliance's scale.
+    Deliberately deferred, not fixed - do not add scope here.
+    """
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_dir), *args],

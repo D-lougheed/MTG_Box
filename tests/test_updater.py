@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mtgkiosk.updater import UpdateError, apply, check
+from mtgkiosk.updater import UpdateError, apply, check, _scrub
 
 
 def _git(repo_dir: Path, *args: str) -> None:
@@ -78,3 +78,8 @@ def test_check_counts_multiple_commits_behind(tmp_path):
 
     status = check(local)
     assert status.commits_behind == 3
+
+
+def test_scrub_handles_credential_containing_at_sign():
+    message = "fatal: could not read Password for 'https://user@example.com:pass@github.com/x'"
+    assert "pass" not in _scrub(message)
