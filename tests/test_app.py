@@ -128,3 +128,10 @@ def test_wifi_connect_returns_502_on_wifi_error(monkeypatch):
     response = client.post("/api/wifi/connect", json={"ssid": "Test", "password": "wrong"})
     assert response.status_code == 502
     assert "wrong" not in response.text
+
+
+def test_wifi_connect_validation_error_does_not_echo_password():
+    client = TestClient(app_module.app)
+    response = client.post("/api/wifi/connect", json={"password": "hunter2-super-secret"})
+    assert response.status_code == 422
+    assert "hunter2-super-secret" not in response.text

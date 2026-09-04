@@ -14,6 +14,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -27,6 +29,12 @@ REPO_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 app = FastAPI()
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError) -> JSONResponse:
+    sanitized_errors = [{k: v for k, v in error.items() if k != "input"} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": sanitized_errors})
 
 
 class WifiConnectRequest(BaseModel):
