@@ -100,20 +100,22 @@ def test_connect_raises_wifi_error_on_timeout():
 
 
 def test_connect_timeout_does_not_leak_password_via_exception_chain():
+    password = "hunter2"
     with patch(
         "mtgkiosk.wifi.subprocess.run",
         side_effect=subprocess.TimeoutExpired(
-            cmd=["nmcli", "device", "wifi", "connect", "MyNetwork", "password", "hunter2"], timeout=30
+            cmd=["nmcli", "device", "wifi", "connect", "MyNetwork", "password", password], timeout=30
         ),
     ):
         try:
-            connect("MyNetwork", "hunter2")
+            connect("MyNetwork", password)
             assert False, "expected WifiError"
         except WifiError as e:
             full_traceback = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            # The exception chain should be severed so TimeoutExpired isn't printed
             assert "TimeoutExpired" not in full_traceback
+            assert "hunter2" not in full_traceback
             assert e.__cause__ is None
+            assert e.__context__ is None
 
 
 def test_scan_timeout_does_not_chain_original_exception():
@@ -123,3 +125,4 @@ def test_scan_timeout_does_not_chain_original_exception():
             assert False, "expected WifiError"
         except WifiError as e:
             assert e.__cause__ is None
+            assert e.__context__ is None
