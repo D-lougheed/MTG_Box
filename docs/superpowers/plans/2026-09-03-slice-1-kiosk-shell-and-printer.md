@@ -1463,9 +1463,28 @@ git commit -m "Add systemd units, udev rule, and install script for the Pi"
 
 ---
 
-## Task 10: Create the GitHub Remote and Push
+## Task 10: Create the GitHub Remote and Push — DONE (2026-09-04), executed differently than originally planned
 
 Needed for the update mechanism (Task 6) to have something real to pull from, and to get the code onto the Pi at all for Task 11.
+
+**What actually happened, and why it differs from the plan below:** the repo is **`D-lougheed/MTG_Box`**, not `Dlougheed/mtg-kiosk` as originally drafted. The development machine's only authenticated `gh` account (`Dlougheed`) turned out to be tied to Dan's employer (Trison NA); the user explicitly required a separate personal account (`D-Lougheed`) instead, set up mid-task via `gh auth login`. The repo is **public**, not private as this task originally assumed — chosen specifically because Task 11's Pi has no way to authenticate an unattended `git pull` interactively, and a public repo needs zero credential setup there, ever. Public was a considered decision, not a default: the alternative (keep private, use a fine-grained read-only PAT stored on the Pi) was offered and explicitly declined in favor of the simpler zero-credential path.
+
+**Real steps executed** (superseding Steps 1-3 below, kept for historical record):
+```bash
+gh auth login                                          # run by the user, personal browser flow, not by Claude
+gh auth switch --user D-lougheed
+gh repo create MTG_Box --private --source=. --remote=origin   # failed: repo already existed (empty)
+git remote add origin https://github.com/D-lougheed/MTG_Box.git
+git push -u origin master
+gh auth switch --user Dlougheed                         # switch back so the work account stays default
+gh repo edit D-lougheed/MTG_Box --visibility public --accept-visibility-change-consequences   # run by the user - blocked by the harness's own permission classifier when Claude attempted it, even with prior explicit consent
+```
+
+**Gotcha discovered, relevant to any future git operation on this repo from this Windows machine:** `gh`'s credential helper serves whichever account is currently "active" globally — it does **not** resolve per-repository based on the URL, even with `credential.useHttpPath=true` (tested, did not help), and embedding the username in the remote URL (`https://D-lougheed@github.com/...`) breaks the helper entirely rather than routing to the right account (tested, causes an interactive-password prompt that fails non-interactively). **The only reliable fix found: bracket any push to this repo with `gh auth switch --user D-lougheed` beforehand and `gh auth switch --user Dlougheed` afterward** — there is no "set and forget" config for this. Moot for the Pi itself, since public access needs no credential at all.
+
+---
+
+### Original plan (superseded — see above for what actually ran)
 
 **Files:** none — this is entirely command execution.
 
@@ -1500,9 +1519,9 @@ Expected: `origin` listed with the new GitHub URL for both fetch and push.
 
 - [ ] **Step 1: Clone the repo onto the Pi**
 
-In the Pi's VNC terminal:
+In the Pi's VNC terminal (repo is public — no credentials needed; local directory kept as `mtg-kiosk` to match Task 9's systemd units, which hardcode `/home/admin/mtg-kiosk`, even though the GitHub repo itself is named `MTG_Box`):
 ```bash
-git clone https://github.com/Dlougheed/mtg-kiosk.git ~/mtg-kiosk
+git clone https://github.com/D-lougheed/MTG_Box.git ~/mtg-kiosk
 ```
 
 - [ ] **Step 2: Run the install script**
