@@ -28,8 +28,11 @@ class WifiNetwork:
 def _parse_terse_line(line: str) -> list[str]:
     # nmcli -t output escapes a literal ':' as '\:' and '\' as '\\'.
     # Split on unescaped ':' only, then unescape each field. Known limitation:
-    # an SSID containing multiple consecutive backslashes before a colon can
-    # still misparse - not worth chasing further for a real-world SSID.
+    # a SSID ending in an odd number of literal backslashes right before the
+    # delimiter can still misparse, since a fixed-width regex lookbehind can't
+    # count a variable-length run of backslashes to check parity - the network
+    # silently disappears from scan results rather than showing corrupted data.
+    # Not worth a full character-scanner rewrite for a vanishingly rare SSID shape.
     fields = re.split(r"(?<!\\):", line)
     return [f.replace("\\:", ":").replace("\\\\", "\\") for f in fields]
 
@@ -43,7 +46,7 @@ def scan(timeout: float = 10) -> list[WifiNetwork]:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as e:
-        raise WifiError(f"scan timed out after {timeout}s") from e
+        raise WifiError(f"scan timed out after {timeout}s") from None
     if result.returncode != 0:
         raise WifiError(result.stderr.strip())
 
@@ -74,7 +77,7 @@ def connect(ssid: str, password: str | None = None, timeout: float = 30) -> None
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as e:
-        raise WifiError("connection attempt timed out") from e
+        raise WifiError("connection attempt timed out") from None
     if result.returncode != 0:
         detail = result.stderr.strip()
         if password:

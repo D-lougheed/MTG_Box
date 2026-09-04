@@ -1,4 +1,5 @@
 import subprocess
+import traceback
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -96,3 +97,29 @@ def test_connect_raises_wifi_error_on_timeout():
     with patch("mtgkiosk.wifi.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="nmcli", timeout=30)):
         with pytest.raises(WifiError):
             connect("MyNetwork", "hunter2")
+
+
+def test_connect_timeout_does_not_leak_password_via_exception_chain():
+    with patch(
+        "mtgkiosk.wifi.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(
+            cmd=["nmcli", "device", "wifi", "connect", "MyNetwork", "password", "hunter2"], timeout=30
+        ),
+    ):
+        try:
+            connect("MyNetwork", "hunter2")
+            assert False, "expected WifiError"
+        except WifiError as e:
+            full_traceback = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+            # The exception chain should be severed so TimeoutExpired isn't printed
+            assert "TimeoutExpired" not in full_traceback
+            assert e.__cause__ is None
+
+
+def test_scan_timeout_does_not_chain_original_exception():
+    with patch("mtgkiosk.wifi.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="nmcli", timeout=10)):
+        try:
+            scan()
+            assert False, "expected WifiError"
+        except WifiError as e:
+            assert e.__cause__ is None
