@@ -600,7 +600,40 @@ Add this new `<main>` block after the existing `view-settings` block (before the
 }
 ```
 
-- [ ] **Step 4: Add the wifi view logic to `web/js/app.js`**
+- [ ] **Step 4: Make `showView()` hide the keyboard on every transition**
+
+Task 3's code review flagged this: the keyboard is only hidden by the specific wifi handlers below (`loadWifiNetworks`, the unsecured-network branch, Cancel, a successful connect) — none of which fire when the user taps the wifi view's generic Back button. Without this fix, opening the password keyboard and tapping Back leaves it floating over the Settings screen until the wifi view is re-entered. Fixing it once in `showView()` itself (rather than adding a `hideKeyboard()` call to every current and future caller) means any future view that ever uses the keyboard gets safe teardown for free.
+
+Find the existing `showView()` function near the top of `web/js/app.js` (added in Slice 1's Task 8):
+
+```javascript
+function showView(name) {
+  const target = document.getElementById(`view-${name}`);
+  if (!target) {
+    console.error(`No view for "${name}"`);
+    return;
+  }
+  document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
+  target.classList.remove("hidden");
+}
+```
+
+Add one line, calling the `hideKeyboard()` function Task 3 defined:
+
+```javascript
+function showView(name) {
+  const target = document.getElementById(`view-${name}`);
+  if (!target) {
+    console.error(`No view for "${name}"`);
+    return;
+  }
+  hideKeyboard();
+  document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
+  target.classList.remove("hidden");
+}
+```
+
+- [ ] **Step 5: Add the wifi view logic to `web/js/app.js`**
 
 Add this to the end of the file:
 
@@ -708,12 +741,12 @@ document.getElementById("wifi-connect-button").addEventListener("click", async (
 
 (`firstLine` already exists in this file from Slice 1's Task 8 — reused here rather than duplicated.)
 
-- [ ] **Step 5: Verify the JS parses correctly**
+- [ ] **Step 6: Verify the JS parses correctly**
 
 Run: `node --check web/js/app.js`
 Expected: exit code 0, no output
 
-- [ ] **Step 6: Manual verification in a desktop browser**
+- [ ] **Step 7: Manual verification in a desktop browser**
 
 This machine has no `nmcli`, so `/api/wifi/scan` will fail here — that's expected, not a bug. Start the server and confirm the parts that don't need real wifi hardware:
 
@@ -731,9 +764,9 @@ To verify the keyboard and connect-form UI without real hardware, temporarily te
 ```javascript
 selectWifiNetwork({ssid: "Test Network", signal: 80, secured: true})
 ```
-Confirm: the password field and keyboard both appear, tapping keyboard keys types into the password field, the "Hide"/"Show" toggle correctly switches the field between masked and visible, and "Cancel" hides the form and keyboard and returns to a clean network-list state.
+Confirm: the password field and keyboard both appear, tapping keyboard keys types into the password field, the "Hide"/"Show" toggle correctly switches the field between masked and visible, and "Cancel" hides the form and keyboard and returns to a clean network-list state. Then repeat with Back instead of Cancel: select a secured network so the keyboard is showing, tap the wifi view's Back button (not Cancel), and confirm the keyboard disappears along with the view — this is the specific gap Step 4 exists to close, so it's worth checking deliberately rather than assuming Step 4 worked.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add web/index.html web/js/app.js web/css/style.css
