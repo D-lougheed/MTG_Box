@@ -182,11 +182,13 @@ document.getElementById("wifi-password-toggle").addEventListener("click", (event
 document.getElementById("wifi-cancel-button").addEventListener("click", () => {
   wifiSelectedNetwork = null;
   document.getElementById("wifi-connect-form").classList.add("hidden");
+  document.getElementById("wifi-connect-status").textContent = "";
   hideKeyboard();
 });
 
 document.getElementById("wifi-connect-button").addEventListener("click", async (event) => {
   if (!wifiSelectedNetwork) return;
+  const network = wifiSelectedNetwork;
   const button = event.currentTarget;
   const statusEl = document.getElementById("wifi-connect-status");
   const passwordInput = document.getElementById("wifi-password-input");
@@ -197,10 +199,11 @@ document.getElementById("wifi-connect-button").addEventListener("click", async (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ssid: wifiSelectedNetwork.ssid,
-        password: wifiSelectedNetwork.secured ? passwordInput.value : null,
+        ssid: network.ssid,
+        password: network.secured ? passwordInput.value : null,
       }),
     });
+    if (wifiSelectedNetwork !== network) return;
     if (response.ok) {
       statusEl.textContent = "Connected!";
       hideKeyboard();
@@ -209,8 +212,9 @@ document.getElementById("wifi-connect-button").addEventListener("click", async (
       statusEl.textContent = firstLine(data.detail || "Couldn't connect. Check the password and try again.");
     }
   } catch (err) {
+    if (wifiSelectedNetwork !== network) return;
     statusEl.textContent = "Couldn't connect: " + firstLine(err.message);
   } finally {
-    button.disabled = false;
+    if (wifiSelectedNetwork === network) button.disabled = false;
   }
 });
