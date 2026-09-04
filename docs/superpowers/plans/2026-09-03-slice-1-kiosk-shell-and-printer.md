@@ -1404,12 +1404,13 @@ WantedBy=multi-user.target
 Description=MTG Kiosk Chromium UI
 After=mtgkiosk.service graphical.target
 Requires=mtgkiosk.service
+PartOf=mtgkiosk.service
 
 [Service]
 Type=simple
 Environment=DISPLAY=:0
-ExecStartPre=/bin/sleep 2
-ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --check-for-update-interval=31536000 http://127.0.0.1:8080
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && exit 0; sleep 0.5; done; exit 1'
+ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-session-crashed-bubble --no-first-run --check-for-update-interval=31536000 --user-data-dir=/home/admin/.config/mtgkiosk-chromium http://127.0.0.1:8080
 Restart=always
 RestartSec=2
 User=admin
@@ -1418,7 +1419,7 @@ User=admin
 WantedBy=graphical.target
 ```
 
-*(Task 11 must confirm the Chromium binary is actually named `chromium-browser` on this Pi's OS image — some Raspberry Pi OS Bookworm builds ship it as plain `chromium`. Check with `which chromium-browser || which chromium` before first start and adjust `ExecStart` if needed.)*
+*(This block was corrected three times and this plan text fell out of sync with the actual `deploy/mtgkiosk-ui.service` each time — now reconciled. History: (1) Task 9 review added `PartOf=`, replaced the blind `sleep 2` with a real TCP-port poll, and swapped the dead `--disable-infobars` for the functional `--disable-session-crashed-bubble`. (2) Task 11 hardware deployment confirmed this Pi's image ships the binary as plain `chromium`, not `chromium-browser`. (3) Task 11 also found Chromium's single-instance mechanism was hijacking an already-running interactive Chromium session on the same display — the systemd-launched instance just signaled that existing browser to open a new tab and exited immediately, which `Restart=always` then relaunched every 2 seconds, producing an infinite new-tab loop instead of a dedicated kiosk window. Fixed with `--user-data-dir=/home/admin/.config/mtgkiosk-chromium`, isolating the kiosk's browser profile from any other Chromium session on the system.)*
 
 - [ ] **Step 4: Write `deploy/99-mtg-printer.rules`**
 
