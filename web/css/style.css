@@ -137,3 +137,40 @@ h2 {
   background: var(--accent);
   font-size: 24px;
 }
+
+.keyboard {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 800px;
+  background: var(--surface);
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.keyboard-row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.keyboard-key {
+  flex: 1;
+  max-width: 60px;
+  height: 34px;
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.keyboard-key-wide {
+  max-width: 90px;
+}
+
+.keyboard-key-space {
+  flex: 4;
+  max-width: none;
+}
