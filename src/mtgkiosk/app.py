@@ -34,6 +34,14 @@ app = FastAPI()
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Strips only the "input" key (the raw submitted value) - added after a
+    # missing-ssid request was found to echo a submitted wifi password back
+    # verbatim via FastAPI's default validator-error handling. This does NOT
+    # protect against a future @field_validator on a sensitive field (e.g.
+    # ssid/password) whose own raised ValueError message echoes the invalid
+    # value - e.g. `raise ValueError(f"got {v!r}")`. Any validator added to
+    # WifiConnectRequest must keep its own error messages free of the raw
+    # field value.
     sanitized_errors = [{k: v for k, v in error.items() if k != "input"} for error in exc.errors()]
     logger.info("request validation failed: %s", sanitized_errors)
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(sanitized_errors)})
