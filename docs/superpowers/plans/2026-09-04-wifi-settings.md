@@ -128,6 +128,8 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'mtgkiosk.wifi'`
 
 - [ ] **Step 3: Write `src/mtgkiosk/wifi.py`**
 
+*(Correction note, added after four review rounds during implementation: the code below is the original draft. The real file diverged substantially — `scan()`/`connect()`'s timeout handling was restructured so `raise` happens after the `try/except` fully exits rather than inside the `except` clause, which is required for `__context__` to genuinely become `None` rather than merely hidden by `__suppress_context__` (a `from None` inside the except block, tried first, turned out insufficient); the two functions' duplicated timeout scaffolding was extracted into a shared `_run_nmcli()` helper, which also gained `OSError` handling for a missing/unreadable `nmcli` binary; the docstring's "a complete, unambiguous fix" claim was corrected to not overstate what scrubbing can guarantee, since a function that needs a plaintext secret as a parameter can never prevent that secret from appearing in its own frame locals if something captures those directly. See `src/mtgkiosk/wifi.py` itself for the current, correct version — it is not reproduced here in full given the extent of the changes.)*
+
 ```python
 """Wifi scan/connect via nmcli.
 
@@ -216,7 +218,7 @@ def connect(ssid: str, password: str | None = None, timeout: float = 30) -> None
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/Scripts/python -m pytest tests/test_wifi.py -v`
-Expected: 12 passed
+Expected: 12 passed at this point in the plan as originally written. The real count after all four review rounds is 16 (4 more tests added for the exception-chain and missing-binary fixes described in the correction note above) — expect 16, not 12, if following the actual repo state rather than this historical step-by-step.
 
 - [ ] **Step 5: Commit**
 
@@ -341,7 +343,7 @@ Expected: 11 passed (7 existing + 4 new)
 - [ ] **Step 5: Run the full suite**
 
 Run: `.venv/Scripts/python -m pytest tests/ -v`
-Expected: 66 passed (50 existing + 12 from Task 1 + 4 from this task)
+Expected: 70 passed (50 from Slice 1 + 16 from Task 1's final state, including its four review-round additions + 4 from this task)
 
 - [ ] **Step 6: Commit**
 
