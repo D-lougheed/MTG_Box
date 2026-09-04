@@ -216,7 +216,7 @@ def connect(ssid: str, password: str | None = None, timeout: float = 30) -> None
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/Scripts/python -m pytest tests/test_wifi.py -v`
-Expected: 11 passed
+Expected: 12 passed
 
 - [ ] **Step 5: Commit**
 
@@ -341,7 +341,7 @@ Expected: 11 passed (7 existing + 4 new)
 - [ ] **Step 5: Run the full suite**
 
 Run: `.venv/Scripts/python -m pytest tests/ -v`
-Expected: 65 passed (50 existing + 11 from Task 1 + 4 from this task)
+Expected: 66 passed (50 existing + 12 from Task 1 + 4 from this task)
 
 - [ ] **Step 6: Commit**
 
