@@ -773,6 +773,8 @@ git add web/index.html web/js/app.js web/css/style.css
 git commit -m "Add wifi settings view: scan, select, and connect flow"
 ```
 
+*(Task 4 went through three follow-up rounds after this commit: a CSS fix so `#wifi-settings-button` got the shared accent style, a staleness guard so a cancelled or superseded connect response can't corrupt the UI for whatever's now selected, and a fix for that guard leaving the Connect button permanently disabled afterward. One minor, deliberately deferred edge case remains: rapidly re-tapping the same network you're already mid-connecting to can fire a second concurrent request for it — self-healing today, not currently reachable on this dev machine's mocked backend, worth a glance if it ever surfaces on real hardware. See `web/js/app.js`'s `selectWifiNetwork`/connect-button history for the full account.)*
+
 ---
 
 ## Task 5: Ship to the Real Pi and Verify Against Real Hardware
