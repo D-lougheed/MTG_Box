@@ -4,6 +4,7 @@ function showView(name) {
     console.error(`No view for "${name}"`);
     return;
   }
+  hideKeyboard();
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   target.classList.remove("hidden");
 }
@@ -110,6 +111,106 @@ document.getElementById("update-apply-button").addEventListener("click", async (
     button.classList.add("hidden");
   } catch (err) {
     status.textContent = "update failed: " + firstLine(err.message);
+    button.disabled = false;
+  }
+});
+
+let wifiSelectedNetwork = null;
+
+document.getElementById("wifi-settings-button").addEventListener("click", () => {
+  showView("wifi");
+  loadWifiNetworks();
+});
+
+async function loadWifiNetworks() {
+  const statusEl = document.getElementById("wifi-scan-status");
+  const listEl = document.getElementById("wifi-network-list");
+  document.getElementById("wifi-connect-form").classList.add("hidden");
+  document.getElementById("wifi-connect-status").textContent = "";
+  hideKeyboard();
+  statusEl.textContent = "Scanning…";
+  listEl.innerHTML = "";
+  try {
+    const response = await fetch("/api/wifi/scan");
+    if (!response.ok) {
+      statusEl.textContent = "Couldn't scan for networks.";
+      return;
+    }
+    const networks = await response.json();
+    if (networks.length === 0) {
+      statusEl.textContent = "No networks found.";
+      return;
+    }
+    statusEl.textContent = "";
+    networks.forEach((network) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "wifi-network-item";
+      item.textContent = (network.secured ? "🔒 " : "") + network.ssid;
+      item.addEventListener("click", () => selectWifiNetwork(network));
+      listEl.appendChild(item);
+    });
+  } catch (err) {
+    statusEl.textContent = "Couldn't scan for networks.";
+  }
+}
+
+function selectWifiNetwork(network) {
+  wifiSelectedNetwork = network;
+  document.getElementById("wifi-selected-ssid").textContent = network.ssid;
+  document.getElementById("wifi-connect-form").classList.remove("hidden");
+  document.getElementById("wifi-connect-status").textContent = "";
+  const passwordRow = document.getElementById("wifi-password-row");
+  const passwordInput = document.getElementById("wifi-password-input");
+  passwordInput.value = "";
+  if (network.secured) {
+    passwordRow.classList.remove("hidden");
+    showKeyboardFor(passwordInput);
+  } else {
+    passwordRow.classList.add("hidden");
+    hideKeyboard();
+  }
+}
+
+document.getElementById("wifi-password-toggle").addEventListener("click", (event) => {
+  const input = document.getElementById("wifi-password-input");
+  const masked = input.type === "password";
+  input.type = masked ? "text" : "password";
+  event.currentTarget.textContent = masked ? "Hide" : "Show";
+});
+
+document.getElementById("wifi-cancel-button").addEventListener("click", () => {
+  wifiSelectedNetwork = null;
+  document.getElementById("wifi-connect-form").classList.add("hidden");
+  hideKeyboard();
+});
+
+document.getElementById("wifi-connect-button").addEventListener("click", async (event) => {
+  if (!wifiSelectedNetwork) return;
+  const button = event.currentTarget;
+  const statusEl = document.getElementById("wifi-connect-status");
+  const passwordInput = document.getElementById("wifi-password-input");
+  button.disabled = true;
+  statusEl.textContent = "Connecting…";
+  try {
+    const response = await fetch("/api/wifi/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ssid: wifiSelectedNetwork.ssid,
+        password: wifiSelectedNetwork.secured ? passwordInput.value : null,
+      }),
+    });
+    if (response.ok) {
+      statusEl.textContent = "Connected!";
+      hideKeyboard();
+    } else {
+      const data = await response.json().catch(() => ({}));
+      statusEl.textContent = firstLine(data.detail || "Couldn't connect. Check the password and try again.");
+    }
+  } catch (err) {
+    statusEl.textContent = "Couldn't connect: " + firstLine(err.message);
+  } finally {
     button.disabled = false;
   }
 });

@@ -66,9 +66,34 @@
       <button id="update-check-button">Check for updates</button>
       <p id="update-status"></p>
       <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+
+      <hr>
+
+      <button id="wifi-settings-button">Connect to wifi network</button>
     </div>
 
     <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-wifi" class="view hidden">
+    <div class="settings-scroll">
+      <h2>Connect to Wifi</h2>
+      <p id="wifi-scan-status"></p>
+      <div id="wifi-network-list" class="wifi-network-list"></div>
+
+      <div id="wifi-connect-form" class="hidden">
+        <p id="wifi-selected-ssid"></p>
+        <div id="wifi-password-row" class="hidden">
+          <input type="text" id="wifi-password-input" placeholder="Password">
+          <button type="button" id="wifi-password-toggle">Hide</button>
+        </div>
+        <button id="wifi-connect-button">Connect</button>
+        <button id="wifi-cancel-button">Cancel</button>
+      </div>
+      <p id="wifi-connect-status"></p>
+    </div>
+
+    <button class="back-button" data-view="settings">Back</button>
   </main>
 
   <button id="random-card-fab" title="Random card">🎲</button>

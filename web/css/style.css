@@ -174,3 +174,36 @@ h2 {
   flex: 4;
   max-width: none;
 }
+
+.wifi-network-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.wifi-network-item {
+  text-align: left;
+  padding: 10px 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+#wifi-password-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+#wifi-password-input {
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: none;
+}
