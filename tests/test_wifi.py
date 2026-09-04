@@ -126,3 +126,15 @@ def test_scan_timeout_does_not_chain_original_exception():
         except WifiError as e:
             assert e.__cause__ is None
             assert e.__context__ is None
+
+
+def test_scan_raises_wifi_error_when_nmcli_missing():
+    with patch("mtgkiosk.wifi.subprocess.run", side_effect=FileNotFoundError("nmcli not found")):
+        with pytest.raises(WifiError):
+            scan()
+
+
+def test_connect_raises_wifi_error_when_nmcli_missing():
+    with patch("mtgkiosk.wifi.subprocess.run", side_effect=FileNotFoundError("nmcli not found")):
+        with pytest.raises(WifiError):
+            connect("MyNetwork", "hunter2")

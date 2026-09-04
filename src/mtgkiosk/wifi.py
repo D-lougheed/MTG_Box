@@ -1,10 +1,15 @@
 """Wifi scan/connect via nmcli.
 
-connect() scrubs the password out of any error message before raising -
-unlike updater.py's credential scrubbing (which has to guess at credential
-shapes in arbitrary text), this function receives the exact secret value
-as a parameter, so a plain string replacement is a complete, unambiguous
-fix rather than a best-effort regex.
+connect() scrubs the password out of the rendered error message and the
+exception chain before raising - unlike updater.py's credential scrubbing
+(which has to guess at credential shapes in arbitrary text), this function
+receives the exact secret value as a parameter, so this is a complete fix
+for those two surfaces specifically. It does NOT prevent the password from
+appearing in this frame's own local variables if something captures those
+directly (e.g. traceback.TracebackException(capture_locals=True), which
+some structured-logging/error-tracking tools do by default) - that's an
+inherent property of a function that needs the plaintext password as an
+argument to do its job, not something scrubbing after the fact can close.
 """
 
 from __future__ import annotations
@@ -38,21 +43,38 @@ def _parse_terse_line(line: str) -> list[str]:
     return [f.replace("\\:", ":").replace("\\\\", "\\") for f in fields]
 
 
-def scan(timeout: float = 10) -> list[WifiNetwork]:
+def _run_nmcli(args: list[str], timeout: float, timeout_message: str) -> subprocess.CompletedProcess:
+    # TimeoutExpired's raise happens AFTER this try/except fully exits, not
+    # inside the except clause - that's deliberate. Raising inside an except
+    # block auto-chains the caught exception via __context__, and for a
+    # connect() call that TimeoutExpired carries the full nmcli argv,
+    # password included, in its .cmd attribute. Raising afterward means
+    # nothing is active in sys.exc_info() to auto-chain to, so __context__
+    # genuinely ends up None rather than merely hidden by __suppress_context__
+    # (which is all `raise ... from None` inside the except block would do).
     timed_out = False
     result = None
     try:
-        result = subprocess.run(
-            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
+    except OSError as e:
+        # A missing/unreadable nmcli binary raises here with just the
+        # executable name in .filename, not the full argv - no password to
+        # scrub in practice, unlike the TimeoutExpired case above.
+        raise WifiError(f"couldn't run nmcli: {e}") from None
 
     if timed_out:
-        raise WifiError(f"scan timed out after {timeout}s")
+        raise WifiError(timeout_message)
+    return result
+
+
+def scan(timeout: float = 10) -> list[WifiNetwork]:
+    result = _run_nmcli(
+        ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
+        timeout,
+        f"scan timed out after {timeout}s",
+    )
     if result.returncode != 0:
         raise WifiError(result.stderr.strip())
 
@@ -81,15 +103,8 @@ def connect(ssid: str, password: str | None = None, timeout: float = 30) -> None
     if password:
         args += ["password", password]
 
-    timed_out = False
-    result = None
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
+    result = _run_nmcli(args, timeout, "connection attempt timed out")
 
-    if timed_out:
-        raise WifiError("connection attempt timed out")
     if result.returncode != 0:
         detail = result.stderr.strip()
         if password:
