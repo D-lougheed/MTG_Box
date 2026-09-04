@@ -11,12 +11,15 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .printer.device import PrinterError, ThermalPrinter
 from .updater import UpdateError, apply as apply_update, check as check_update
+from .wifi import WifiError, connect as wifi_connect, scan as wifi_scan
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,11 @@ REPO_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 app = FastAPI()
+
+
+class WifiConnectRequest(BaseModel):
+    ssid: str
+    password: str | None = None
 
 
 @lru_cache
@@ -101,6 +109,26 @@ def post_update_apply() -> dict:
         raise HTTPException(status_code=502, detail="dependency install failed after update; restart aborted")
     subprocess.run(["systemd-run", "--on-active=2", "systemctl", "restart", "mtgkiosk"])
     return {"restarting": True}
+
+
+@app.get("/api/wifi/scan")
+def get_wifi_scan() -> list[dict]:
+    try:
+        networks = wifi_scan()
+    except WifiError as e:
+        logger.warning("wifi scan failed: %s", e)
+        raise HTTPException(status_code=502, detail="Couldn't scan for networks.") from e
+    return [{"ssid": n.ssid, "signal": n.signal, "secured": n.secured} for n in networks]
+
+
+@app.post("/api/wifi/connect")
+def post_wifi_connect(body: WifiConnectRequest) -> dict:
+    try:
+        wifi_connect(body.ssid, body.password)
+    except WifiError as e:
+        logger.warning("wifi connect failed for ssid=%s: %s", body.ssid, e)
+        raise HTTPException(status_code=502, detail="Couldn't connect. Check the password and try again.") from e
+    return {"connected": True}
 
 
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 import mtgkiosk.app as app_module
 from mtgkiosk.app import app, get_printer
 from mtgkiosk.printer.device import PrinterError
+from mtgkiosk.wifi import WifiError
 
 
 class FakePrinter:
@@ -88,3 +89,42 @@ def test_update_apply_returns_502_and_skips_restart_when_pip_install_fails(monke
 
     assert response.status_code == 502
     assert not any("systemctl" in str(c) for c in calls)
+
+
+def test_wifi_scan_returns_networks(monkeypatch):
+    monkeypatch.setattr(app_module, "wifi_scan", lambda: [
+        __import__("mtgkiosk.wifi", fromlist=["WifiNetwork"]).WifiNetwork(ssid="Test", signal=80, secured=True)
+    ])
+    client = TestClient(app_module.app)
+    response = client.get("/api/wifi/scan")
+    assert response.status_code == 200
+    assert response.json() == [{"ssid": "Test", "signal": 80, "secured": True}]
+
+
+def test_wifi_scan_returns_502_on_wifi_error(monkeypatch):
+    def raise_error():
+        raise WifiError("boom")
+    monkeypatch.setattr(app_module, "wifi_scan", raise_error)
+    client = TestClient(app_module.app)
+    response = client.get("/api/wifi/scan")
+    assert response.status_code == 502
+
+
+def test_wifi_connect_returns_200_on_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_module, "wifi_connect", lambda ssid, password: calls.append((ssid, password)))
+    client = TestClient(app_module.app)
+    response = client.post("/api/wifi/connect", json={"ssid": "Test", "password": "secret"})
+    assert response.status_code == 200
+    assert response.json() == {"connected": True}
+    assert calls == [("Test", "secret")]
+
+
+def test_wifi_connect_returns_502_on_wifi_error(monkeypatch):
+    def raise_error(ssid, password):
+        raise WifiError("boom")
+    monkeypatch.setattr(app_module, "wifi_connect", raise_error)
+    client = TestClient(app_module.app)
+    response = client.post("/api/wifi/connect", json={"ssid": "Test", "password": "wrong"})
+    assert response.status_code == 502
+    assert "wrong" not in response.text
