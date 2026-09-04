@@ -157,6 +157,7 @@ async function loadWifiNetworks() {
 
 function selectWifiNetwork(network) {
   wifiSelectedNetwork = network;
+  document.getElementById("wifi-connect-button").disabled = false;
   document.getElementById("wifi-selected-ssid").textContent = network.ssid;
   document.getElementById("wifi-connect-form").classList.remove("hidden");
   document.getElementById("wifi-connect-status").textContent = "";
