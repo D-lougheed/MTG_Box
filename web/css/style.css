@@ -125,7 +125,8 @@ h2 {
 }
 
 #selftest-button, #update-check-button, #update-apply-button, #wifi-settings-button,
-#cards-update-button {
+#cards-update-button,
+#images-prefetch-button {
   margin-top: 16px;
   align-self: flex-start;
   padding: 14px 20px;
@@ -134,6 +135,17 @@ h2 {
   border-radius: 8px;
   background: var(--accent);
   color: #1a1a1a;
+}
+
+/* Stop is a secondary action beside the primary download button. */
+#images-stop-button {
+  margin-top: 12px;
+  padding: 14px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 #wifi-manual-button {

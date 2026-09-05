@@ -143,6 +143,7 @@ async function refreshCardsStatus() {
     button.disabled = false;
     statusEl.textContent = data.available ? data.count.toLocaleString() + " cards" : "not downloaded";
     button.textContent = data.available ? "Update card database" : "Download card database";
+    renderImagesStatus(data.images);
     if (data.error) {
       document.getElementById("cards-update-status").textContent = "last update failed: " + firstLine(data.error);
     }
@@ -150,6 +151,78 @@ async function refreshCardsStatus() {
     statusEl.textContent = "unknown";
   }
 }
+
+// Downloading every card image is ~69k requests over roughly two and a half
+// hours, so it reports a real count and offers a way out. It resumes where it
+// left off, which is why stopping is safe rather than destructive.
+function renderImagesStatus(images) {
+  const statusEl = document.getElementById("images-status");
+  const startButton = document.getElementById("images-prefetch-button");
+  const stopButton = document.getElementById("images-stop-button");
+  const noteEl = document.getElementById("images-prefetch-status");
+  if (!images) {
+    statusEl.textContent = "unknown";
+    return;
+  }
+
+  const progress = images.progress;
+  startButton.classList.toggle("hidden", images.running);
+  stopButton.classList.toggle("hidden", !images.running);
+  stopButton.disabled = images.stopping;
+
+  if (images.running && progress && progress.total) {
+    const percent = Math.floor((progress.done / progress.total) * 100);
+    statusEl.textContent = `${progress.done.toLocaleString()} / ${progress.total.toLocaleString()} (${percent}%)`;
+    noteEl.textContent = images.stopping
+      ? "stopping…"
+      : `${progress.downloaded.toLocaleString()} downloaded, ${progress.skipped.toLocaleString()} already had, ${progress.failed.toLocaleString()} failed`;
+    if (cardsPollTimer === null) cardsPollTimer = setInterval(refreshCardsStatus, 1500);
+    return;
+  }
+
+  if (images.running) {
+    statusEl.textContent = "starting…";
+    if (cardsPollTimer === null) cardsPollTimer = setInterval(refreshCardsStatus, 1500);
+    return;
+  }
+
+  statusEl.textContent = progress
+    ? `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} cached`
+    : "on demand";
+  noteEl.textContent = images.error ? "last run failed: " + firstLine(images.error) : "";
+}
+
+document.getElementById("images-prefetch-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const note = document.getElementById("images-prefetch-status");
+  button.disabled = true;
+  note.textContent = "starting…";
+  try {
+    const response = await fetch("/api/cards/prefetch", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note.textContent = "couldn't start: " + firstLine(data.detail || response.status);
+      button.disabled = false;
+      return;
+    }
+    note.textContent = "downloading — this takes a couple of hours, and resumes if interrupted";
+    refreshCardsStatus();
+  } catch (err) {
+    note.textContent = "couldn't start: " + firstLine(err.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("images-stop-button").addEventListener("click", async (event) => {
+  event.currentTarget.disabled = true;
+  try {
+    await fetch("/api/cards/prefetch/stop", { method: "POST" });
+  } catch (err) {
+    // The poll below reports the real state either way.
+  }
+  refreshCardsStatus();
+});
 
 document.getElementById("cards-update-button").addEventListener("click", async (event) => {
   const button = event.currentTarget;

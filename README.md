@@ -52,6 +52,26 @@ You can also build it from a terminal:
 python scripts/ingest_cards.py
 ```
 
+### Going fully offline
+
+Settings → **Download all card images** fetches every card picture and every
+art crop — about **6.2 GB** and **two and a half hours**. After that the lookup
+screen and the printer work with no network at all.
+
+It is worth understanding before starting it:
+
+- It's ~69,000 requests against Scryfall, a free service, paced at 100ms as
+  their API guidelines ask. That pacing is most of the runtime.
+- **It resumes.** Anything already downloaded is skipped without a request, so
+  stopping, rebooting or losing wifi costs nothing but the time already spent.
+  Restart it and it picks up where it left off.
+- **Stop** is safe and takes effect within a second.
+- It refuses to start if the card hasn't got room, rather than filling the disk
+  and failing in ways that break everything else on the device.
+
+None of this is required — images cache themselves as you use the device, and
+printing falls back to text when art isn't available.
+
 ## Updating
 
 Settings → Check for updates → Install update & restart. That does a

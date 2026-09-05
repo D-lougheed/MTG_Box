@@ -21,7 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, cards, horde, images
+from . import __version__, cards, horde, images, prefetch
 from .cards import CardDatabaseError
 from .horde import HordeError
 from .ingest import ingest as ingest_cards
@@ -231,6 +231,71 @@ def _run_ingest() -> None:
         _ingest_state.update(running=False, stage="done", done=written, error=None)
 
 
+# Separate state from the ingest: the two are independent, one runs for minutes
+# and the other for hours, and sharing a flag would let either wedge the other.
+_prefetch_state: dict = {"running": False, "stopping": False, "error": None, "progress": None}
+_prefetch_lock = threading.Lock()
+
+
+def _prefetch_should_stop() -> bool:
+    with _prefetch_lock:
+        return _prefetch_state["stopping"]
+
+
+def _run_prefetch() -> None:
+    def report(p: prefetch.PrefetchProgress) -> None:
+        with _prefetch_lock:
+            _prefetch_state["progress"] = p.as_dict()
+
+    try:
+        prefetch.prefetch(
+            CARDS_DB,
+            {"normal": IMAGE_CACHE, "art_crop": ART_CACHE},
+            progress=report,
+            should_stop=_prefetch_should_stop,
+        )
+    except Exception as e:
+        # Broad for the same reason as the ingest: this owns a background
+        # thread with no caller, and anything escaping would strand running.
+        logger.warning("image prefetch failed: %s", e)
+        with _prefetch_lock:
+            _prefetch_state.update(running=False, stopping=False, error=str(e))
+        return
+    with _prefetch_lock:
+        _prefetch_state.update(running=False, stopping=False, error=None)
+
+
+@app.post("/api/cards/prefetch")
+def post_cards_prefetch() -> dict:
+    if not cards.is_available(CARDS_DB):
+        raise HTTPException(status_code=503, detail="download the card database first")
+    try:
+        prefetch.check_free_space(DATA_DIR, prefetch.estimate_bytes(CARDS_DB))
+    except prefetch.PrefetchError as e:
+        raise HTTPException(status_code=507, detail=str(e)) from e
+
+    with _prefetch_lock:
+        if _prefetch_state["running"]:
+            raise HTTPException(status_code=409, detail="already downloading images")
+        _prefetch_state.update(running=True, stopping=False, error=None, progress=None)
+        try:
+            threading.Thread(target=_run_prefetch, daemon=True).start()
+        except RuntimeError as e:
+            _prefetch_state.update(running=False, error=str(e))
+            raise HTTPException(status_code=503, detail="couldn't start the download") from e
+    return {"started": True}
+
+
+@app.post("/api/cards/prefetch/stop")
+def post_cards_prefetch_stop() -> dict:
+    # Sets a flag rather than killing the thread: the worker checks it every
+    # card, so a stop lands within one request instead of mid-write.
+    with _prefetch_lock:
+        if _prefetch_state["running"]:
+            _prefetch_state["stopping"] = True
+    return {"stopping": True}
+
+
 @app.get("/api/cards/status")
 def get_cards_status() -> dict:
     with _ingest_lock:
@@ -239,12 +304,24 @@ def get_cards_status() -> dict:
         "available": cards.is_available(CARDS_DB),
         "count": cards.count(CARDS_DB),
         "updating": state["running"],
+        "images": _prefetch_status(),
         "progress": (
             {"stage": state["stage"], "done": state["done"], "total": state["total"]}
             if state["running"]
             else None
         ),
         "error": state["error"],
+    }
+
+
+def _prefetch_status() -> dict:
+    with _prefetch_lock:
+        state = dict(_prefetch_state)
+    return {
+        "running": state["running"],
+        "stopping": state["stopping"],
+        "error": state["error"],
+        "progress": state["progress"],
     }
 
 

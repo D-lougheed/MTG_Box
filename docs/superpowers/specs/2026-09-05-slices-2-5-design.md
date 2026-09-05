@@ -203,6 +203,20 @@ Search view reusing the existing on-screen keyboard component:
 
 The cache is unbounded by design: the whole Oracle set at ~100 KB per image is roughly 3 GB against a 10 GB budget, and in practice only looked-up cards are ever fetched.
 
+### Bulk pre-download — added 2026-09-05
+
+On-demand caching covers a table with wifi. Going fully offline means fetching everything up front, and measured against the real set that is **3.52 GB of card images plus 2.66 GB of art crops — 6.2 GB over ~69,000 requests**. At the 50-100ms spacing Scryfall's API guidelines ask for, the pacing alone accounts for about an hour of a roughly two-and-a-half hour run.
+
+Three properties matter more than throughput, because this runs for hours on an appliance that can be switched off mid-job:
+
+- **Resumable.** Anything already cached is skipped without a request, and the delay is paid only on real downloads — so a resume skims cached entries at full speed rather than crawling. Verified: a restart after 88 downloads skipped all of them and issued no requests.
+- **Cancellable.** `should_stop` is checked every card, so stopping lands within a second instead of after the remaining tens of thousands.
+- **Non-fatal failures.** A card that 404s is counted and stepped over. Losing hours of progress to one bad image would be absurd.
+
+It refuses to start when the disk can't take it, rather than filling the card and failing late — a kiosk that fills its own storage stops being a kiosk, and nothing about that failure explains itself.
+
+The two caches are separate directories keyed by the same card id: same key, different picture, so one directory would have them overwrite each other.
+
 Files: `src/mtgkiosk/images.py`, `web/js/cards.js` (shared with random card), `web/css/cards.css`.
 
 ## Slice 5 — Horde mode
