@@ -262,7 +262,9 @@
       const response = await fetch("/api/cards/print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: cardId }),
+        // Read per print rather than cached, so changing it in Settings takes
+        // effect on the very next print without reloading anything.
+        body: JSON.stringify({ id: cardId, mode: getPrintMode() }),
       });
       if (isStale()) return;
       if (response.ok) {

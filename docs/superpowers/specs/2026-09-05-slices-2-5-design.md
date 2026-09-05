@@ -138,7 +138,23 @@ The art is cropped to fill its column rather than fitted whole: `art_crop` is la
 
 `art_crop_uri` is stored as its own column rather than derived by rewriting the `normal` URL's path. That rewrite happens to work, but the URL structure is undocumented and would break silently.
 
-**Art never blocks a print.** `POST /api/cards/print` takes `art` (default true) and falls back to the text label whenever the artwork is missing, uncached and unreachable, or unreadable. At a table with no network the label still comes out; the response reports which was used.
+### Three print modes — added 2026-09-05
+
+`POST /api/cards/print` takes `mode`, chosen in Settings and remembered in `localStorage`:
+
+| Mode | Layout |
+|---|---|
+| `art` (default) | Artwork down the left, rules text at full size beside it |
+| `image` | The whole card reproduced as a picture |
+| `text` | Rules text only |
+
+`image` exists because the whole card as a picture is a different thing from a readable reference, and both are wanted: one to look at, one to play from. It fits the card to the label preserving aspect and **rotates a quarter turn whenever that makes the card bigger** — on the 3x2 landscape stock a portrait card fitted upright fills 48% of the label, rotated it fills 93%. The cost is that the label then reads sideways, which is the right trade for a picture and the wrong one for rules text, hence two modes rather than one.
+
+Deciding by area rather than hardcoding the rotation means portrait stock reverses it by itself: on a 2x3 label the upright fit wins and nothing changes. **Note that changing label stock also means re-running the printer's physical gap calibration** — getting that wrong once already fed an entire roll through the printer during Slice 1 bring-up.
+
+The setting lives in `localStorage` rather than on the server: there is one browser on this device with a persistent profile, and a server-side settings store would be a whole new mechanism for one string.
+
+**No mode ever blocks a print.** Each falls back to the text label when its picture is missing, unreachable or unreadable, so a table with no network still gets a label. The response reports which mode actually printed.
 
 ### API
 

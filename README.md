@@ -21,9 +21,10 @@ launcher — and self-heals if anything crashes.
 - **Random card** — reachable from any screen via the dice button.
 - **Horde mode** — pick a creature type and a difficulty; it builds a horde deck
   and runs the game loop.
-- **Print** — any card to a 3x2in thermal label, to stick on a bulk card: the
-  artwork dithered down one side, the full rules text at readable size beside
-  it. Falls back to text alone when the art isn't cached and there's no network.
+- **Print** — any card to a 3x2in thermal label, in one of three layouts
+  (Settings → What to print): artwork beside the rules text, the whole card as
+  a picture, or text alone. Every mode falls back to text when its picture
+  isn't cached and there's no network.
 - **Settings** — printer status, wifi (including networks that aren't
   broadcasting), self-update from git, and the card database download.
 

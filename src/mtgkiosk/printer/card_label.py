@@ -281,6 +281,41 @@ def _stats(card: Card) -> str:
 ART_COLUMN_DOTS = 240
 
 
+def render_full_card(
+    image: Image.Image,
+    width: int = LABEL_WIDTH_DOTS,
+    height: int = LABEL_HEIGHT_DOTS,
+) -> Image.Image:
+    """The whole card as a picture, filling as much of the label as it will.
+
+    Rotated a quarter turn whenever that makes the card bigger, which on the
+    3x2 landscape stock it does by a lot: a portrait card fitted upright uses
+    48% of the label, rotated it uses 93%. The tradeoff is that the label then
+    reads sideways.
+
+    Deciding by area rather than hardcoding the rotation means portrait label
+    stock reverses it automatically - on a 2x3 label the upright fit wins and
+    nothing here has to change.
+
+    Aspect ratio is preserved and the card is centred; it is never cropped,
+    because a clipped card is not a copy of the card.
+    """
+    best = None
+    for candidate in (image, image.rotate(90, expand=True)):
+        scale = min(width / candidate.width, height / candidate.height)
+        size = (max(1, round(candidate.width * scale)), max(1, round(candidate.height * scale)))
+        if best is None or size[0] * size[1] > best[1][0] * best[1][1]:
+            best = (candidate, size)
+
+    source, size = best
+    canvas = Image.new("L", (width, height), color=255)
+    resized = source.convert("L").resize(size, Image.LANCZOS)
+    canvas.paste(resized, ((width - size[0]) // 2, (height - size[1]) // 2))
+    # Dithered for the same reason as the art column: a hard threshold turns
+    # illustration into blobs at one bit per dot.
+    return canvas.convert(_MODE, dither=Image.FLOYDSTEINBERG)
+
+
 def render_with_art(
     card: Card,
     art: Image.Image,

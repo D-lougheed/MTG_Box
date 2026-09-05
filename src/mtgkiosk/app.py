@@ -11,6 +11,7 @@ import subprocess
 import threading
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from PIL import Image
 from pydantic import BaseModel
@@ -78,9 +79,10 @@ class WifiConnectRequest(BaseModel):
 
 class CardPrintRequest(BaseModel):
     id: str
-    # Defaults on: the artwork is the point of printing a label for a card you
-    # are about to sleeve. Falls back to text silently when art isn't available.
-    art: bool = True
+    # "art" (artwork beside the rules text) is the default because it is the
+    # only mode that is both recognisable and readable. "image" reproduces the
+    # whole card as a picture; "text" is the fallback every mode degrades to.
+    mode: Literal["art", "text", "image"] = "art"
 
 
 class HordeDeckRequest(BaseModel):
@@ -363,32 +365,40 @@ def post_cards_print(body: CardPrintRequest, printer: ThermalPrinter = Depends(g
     if card is None:
         raise HTTPException(status_code=404, detail="card not found")
 
+    # Every mode falls back to text: at a table with no network and an
+    # uncached card, a label still has to come out. The response says which
+    # mode actually printed so the UI can tell the difference.
     label = card_label.render(card)
-    printed_art = False
-    if body.art:
-        art = _load_art(card)
+    printed = "text"
+
+    if body.mode == "art":
+        art = _load_picture(card, ART_CACHE, card.art_crop_uri)
         if art is not None:
             label = card_label.render_with_art(card, art)
-            printed_art = True
+            printed = "art"
+    elif body.mode == "image":
+        picture = _load_picture(card, IMAGE_CACHE, card.image_uri)
+        if picture is not None:
+            label = card_label.render_full_card(picture)
+            printed = "image"
 
     try:
         printer.print_image(label)
     except PrinterError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    return {"ok": True, "art": printed_art}
+    return {"ok": True, "mode": printed}
 
 
-def _load_art(card: cards.Card) -> Image.Image | None:
-    """The card's artwork for the label, or None to fall back to text only.
+def _load_picture(card: cards.Card, cache_dir: Path, url: str | None) -> Image.Image | None:
+    """A cached picture for the label, or None to fall back to text only.
 
-    Art is a nicety and printing is not: at a table with no network and an
-    uncached card, the label still has to come out. Every failure here -
-    offline, no art_crop on this card, an unreadable file - degrades to the
-    text label rather than refusing to print.
+    Pictures are a nicety and printing is not. Every failure here - offline,
+    no such image for this card, an unreadable file - degrades to the text
+    label rather than refusing to print.
     """
-    if not card.art_crop_uri:
+    if not url:
         return None
-    path = images.get_or_fetch(ART_CACHE, card.id, card.art_crop_uri)
+    path = images.get_or_fetch(cache_dir, card.id, url)
     if path is None:
         return None
     try:
@@ -396,7 +406,7 @@ def _load_art(card: cards.Card) -> Image.Image | None:
             art.load()
             return art.copy()
     except (OSError, ValueError) as e:
-        logger.info("unusable art for %s: %s", card.id, e)
+        logger.info("unusable picture for %s: %s", card.id, e)
         return None
 
 

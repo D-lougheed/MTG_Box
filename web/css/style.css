@@ -294,3 +294,39 @@ h2 {
   border-radius: 8px;
   border: none;
 }
+
+.settings-heading {
+  margin: 16px 0 8px 0;
+  font-size: 16px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.option-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.option {
+  padding: 14px 20px;
+  font-size: 16px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Selection is carried by a border and the accent colour rather than by
+   colour alone, so it survives the thermal-monochrome habit of thinking in
+   contrast and stays legible at a glance from across the table. */
+.option-selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.option-note {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 560px;
+}

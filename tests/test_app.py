@@ -420,7 +420,7 @@ def test_card_print_falls_back_to_text_when_art_is_unavailable(tmp_path, monkeyp
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "art": False}
+    assert response.json() == {"ok": True, "mode": "text"}
     assert printed and printed[0].size == (609, 406)
 
 
@@ -444,14 +444,14 @@ def test_card_print_uses_art_when_it_is_cached(tmp_path, monkeypatch):
     response = client.post("/api/cards/print", json={"id": "id-3"})
     app.dependency_overrides.clear()
 
-    assert response.json() == {"ok": True, "art": True}
+    assert response.json() == {"ok": True, "mode": "art"}
 
 
 def test_card_print_can_be_asked_for_text_only(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ART_ROWS))
 
     def explode(*a, **kw):
-        raise AssertionError("art must not be fetched when the caller opted out")
+        raise AssertionError("no picture should be fetched in text mode")
 
     monkeypatch.setattr(app_module.images, "get_or_fetch", explode)
 
@@ -461,7 +461,7 @@ def test_card_print_can_be_asked_for_text_only(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_printer] = lambda: RecordingPrinter()
     client = TestClient(app_module.app)
-    response = client.post("/api/cards/print", json={"id": "id-3", "art": False})
+    response = client.post("/api/cards/print", json={"id": "id-3", "mode": "text"})
     app.dependency_overrides.clear()
 
-    assert response.json() == {"ok": True, "art": False}
+    assert response.json() == {"ok": True, "mode": "text"}

@@ -152,6 +152,50 @@ async function refreshCardsStatus() {
   }
 }
 
+// Which of the three label layouts the Print buttons ask for. Kept in
+// localStorage rather than on the server: there is exactly one browser on this
+// device, its profile is persistent, and a server-side settings store would be
+// a whole new mechanism for one string.
+const PRINT_MODE_KEY = "mtgkiosk.printMode";
+const PRINT_MODES = {
+  art: "Artwork down the side with the rules text beside it.",
+  image: "The whole card as a picture. Turned sideways to fill the label, so it reads at a quarter turn.",
+  text: "Rules text only, at the largest readable size.",
+};
+const DEFAULT_PRINT_MODE = "art";
+
+function getPrintMode() {
+  try {
+    const stored = localStorage.getItem(PRINT_MODE_KEY);
+    if (stored && PRINT_MODES[stored]) return stored;
+  } catch (err) {
+    // Storage can throw outright in some contexts; the default still prints.
+  }
+  return DEFAULT_PRINT_MODE;
+}
+
+function setPrintMode(mode) {
+  if (!PRINT_MODES[mode]) return;
+  try {
+    localStorage.setItem(PRINT_MODE_KEY, mode);
+  } catch (err) {
+    // Not persisting is survivable; refusing to change the setting is not.
+  }
+  renderPrintMode(mode);
+}
+
+function renderPrintMode(mode) {
+  document.querySelectorAll("[data-print-mode]").forEach((button) => {
+    button.classList.toggle("option-selected", button.dataset.printMode === mode);
+  });
+  document.getElementById("print-mode-note").textContent = PRINT_MODES[mode];
+}
+
+document.querySelectorAll("[data-print-mode]").forEach((button) => {
+  button.addEventListener("click", () => setPrintMode(button.dataset.printMode));
+});
+renderPrintMode(getPrintMode());
+
 // Downloading every card image is ~69k requests over roughly two and a half
 // hours, so it reports a real count and offers a way out. It resumes where it
 // left off, which is why stopping is safe rather than destructive.

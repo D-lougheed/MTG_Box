@@ -374,6 +374,16 @@ def test_stats_of_an_ingested_plain_planeswalker_is_just_its_loyalty():
 # --- artwork labels ---------------------------------------------------------
 
 
+def _solid_art(width, height):
+    """Mid-grey, which Floyd-Steinberg turns into ink across the whole area.
+
+    Geometry tests measure the ink bounding box, so the stand-in must not have
+    near-white regions - those leave no ink and would under-report the size of
+    the printed card.
+    """
+    return Image.new("L", (width, height), 128)
+
+
 def _fake_art(width=626, height=457):
     """A gradient stands in for artwork: it dithers, unlike a flat fill."""
     art = Image.new("L", (width, height))
@@ -430,3 +440,55 @@ def test_render_with_art_crops_rather_than_letterboxes_a_landscape_crop():
 def test_render_with_art_accepts_a_tiny_art_image():
     img = card_label.render_with_art(VANILLA, _fake_art(4, 3))
     assert img.size == (card_label.LABEL_WIDTH_DOTS, card_label.LABEL_HEIGHT_DOTS)
+
+
+# --- full card image --------------------------------------------------------
+
+
+def test_render_full_card_matches_the_label_size_and_mode():
+    img = card_label.render_full_card(_solid_art(488, 680))
+    assert img.size == (card_label.LABEL_WIDTH_DOTS, card_label.LABEL_HEIGHT_DOTS)
+    assert img.mode == "1"
+
+
+def test_render_full_card_rotates_a_portrait_card_onto_landscape_stock():
+    """A portrait card fitted upright uses 48% of a 3x2 label; rotated, 93%.
+
+    The rule is "rotate when it makes the card bigger", so it is asserted by
+    measuring the printed area rather than by checking for a rotate() call.
+    """
+    portrait = _solid_art(488, 680)
+    img = card_label.render_full_card(portrait, width=609, height=406)
+    ink = _ink_bbox(img)
+    printed_width = ink[2] - ink[0]
+    # Upright would be about 291 dots wide; rotated is about 566.
+    assert printed_width > 500
+
+
+def test_render_full_card_leaves_a_portrait_label_upright():
+    # The same rule has to reverse itself on 2x3 stock, so swapping label
+    # orientation needs no code change.
+    portrait = _solid_art(488, 680)
+    img = card_label.render_full_card(portrait, width=406, height=609)
+    ink = _ink_bbox(img)
+    assert (ink[3] - ink[1]) > (ink[2] - ink[0])
+
+
+def test_render_full_card_preserves_aspect_ratio():
+    # A stretched card is not a copy of the card.
+    source = _solid_art(488, 680)
+    img = card_label.render_full_card(source, width=609, height=406)
+    ink = _ink_bbox(img)
+    printed = (ink[2] - ink[0]) / (ink[3] - ink[1])
+    rotated_aspect = 680 / 488
+    assert abs(printed - rotated_aspect) < 0.05
+
+
+def test_render_full_card_never_crops_the_card():
+    source = _solid_art(488, 680)
+    img = card_label.render_full_card(source, width=609, height=406)
+    ink = _ink_bbox(img)
+    assert ink[0] >= 0 and ink[1] >= 0
+    assert ink[2] <= img.width and ink[3] <= img.height
+    # Fitted, not filled: one axis must have room left over.
+    assert (ink[2] - ink[0]) < img.width or (ink[3] - ink[1]) < img.height
