@@ -12,6 +12,7 @@ import threading
 from functools import lru_cache
 from pathlib import Path
 
+from PIL import Image
 from pydantic import BaseModel
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -36,6 +37,9 @@ WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 DATA_DIR = REPO_DIR / "data"
 CARDS_DB = DATA_DIR / "cards.sqlite"
 IMAGE_CACHE = DATA_DIR / "images"
+# Kept apart from the full-card cache: same card id, different picture, and
+# one directory would have them overwrite each other.
+ART_CACHE = DATA_DIR / "art"
 
 app = FastAPI()
 
@@ -74,6 +78,9 @@ class WifiConnectRequest(BaseModel):
 
 class CardPrintRequest(BaseModel):
     id: str
+    # Defaults on: the artwork is the point of printing a label for a card you
+    # are about to sleeve. Falls back to text silently when art isn't available.
+    art: bool = True
 
 
 class HordeDeckRequest(BaseModel):
@@ -278,11 +285,42 @@ def post_cards_print(body: CardPrintRequest, printer: ThermalPrinter = Depends(g
     card = cards.get(CARDS_DB, body.id)
     if card is None:
         raise HTTPException(status_code=404, detail="card not found")
+
+    label = card_label.render(card)
+    printed_art = False
+    if body.art:
+        art = _load_art(card)
+        if art is not None:
+            label = card_label.render_with_art(card, art)
+            printed_art = True
+
     try:
-        printer.print_image(card_label.render(card))
+        printer.print_image(label)
     except PrinterError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    return {"ok": True}
+    return {"ok": True, "art": printed_art}
+
+
+def _load_art(card: cards.Card) -> Image.Image | None:
+    """The card's artwork for the label, or None to fall back to text only.
+
+    Art is a nicety and printing is not: at a table with no network and an
+    uncached card, the label still has to come out. Every failure here -
+    offline, no art_crop on this card, an unreadable file - degrades to the
+    text label rather than refusing to print.
+    """
+    if not card.art_crop_uri:
+        return None
+    path = images.get_or_fetch(ART_CACHE, card.id, card.art_crop_uri)
+    if path is None:
+        return None
+    try:
+        with Image.open(path) as art:
+            art.load()
+            return art.copy()
+    except (OSError, ValueError) as e:
+        logger.info("unusable art for %s: %s", card.id, e)
+        return None
 
 
 @app.get("/api/horde/subtypes")

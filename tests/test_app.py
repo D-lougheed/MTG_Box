@@ -233,8 +233,8 @@ def _seed_cards_db(tmp_path, rows):
     conn = sqlite3.connect(str(db_path))
     cards_module.create_schema(conn)
     conn.executemany(
-        "INSERT INTO cards (id, name, type_line, oracle_text, power, toughness, cmc, image_uri)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO cards (id, name, type_line, oracle_text, power, toughness, cmc,"
+        " image_uri, art_crop_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
     conn.commit()
@@ -242,9 +242,14 @@ def _seed_cards_db(tmp_path, rows):
     return db_path
 
 
+ART_ROWS = [
+    ("id-3", "Arty Card", "Creature — Bear", "Trample.", "2", "2", 2.0,
+     "https://img.test/3.jpg", "https://img.test/3-art.jpg"),
+]
+
 ZOMBIE_ROWS = [
-    ("id-1", "Rotting Regisaur", "Creature — Zombie Dinosaur", "Trample.", "7", "6", 3.0, None),
-    ("id-2", "Diregraf Ghoul", "Creature — Zombie", "Enters tapped.", "2", "2", 1.0, "https://img.test/2.jpg"),
+    ("id-1", "Rotting Regisaur", "Creature — Zombie Dinosaur", "Trample.", "7", "6", 3.0, None, None),
+    ("id-2", "Diregraf Ghoul", "Creature — Zombie", "Enters tapped.", "2", "2", 1.0, "https://img.test/2.jpg", None),
 ]
 
 
@@ -391,3 +396,72 @@ def test_cards_update_does_not_strand_the_running_flag_if_the_thread_cannot_star
     body = client.get("/api/cards/status").json()
     assert body["updating"] is False
     assert "can't start new thread" in body["error"]
+
+
+def test_card_print_falls_back_to_text_when_art_is_unavailable(tmp_path, monkeypatch):
+    """Printing must work at a table with no network and an uncached card.
+
+    Art is a nicety; the label coming out is not. Every art failure degrades
+    to the text label rather than refusing to print.
+    """
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    monkeypatch.setattr(app_module, "ART_CACHE", tmp_path / "art")
+    monkeypatch.setattr(app_module.images, "get_or_fetch", lambda *a, **kw: None)
+
+    printed = []
+
+    class RecordingPrinter:
+        def print_image(self, img):
+            printed.append(img)
+
+    app.dependency_overrides[get_printer] = lambda: RecordingPrinter()
+    client = TestClient(app_module.app)
+    response = client.post("/api/cards/print", json={"id": "id-2"})
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "art": False}
+    assert printed and printed[0].size == (609, 406)
+
+
+def test_card_print_uses_art_when_it_is_cached(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ART_ROWS))
+    art_dir = tmp_path / "art"
+    art_dir.mkdir()
+    art_path = art_dir / "id-3.jpg"
+    Image.new("L", (626, 457), 128).save(art_path)
+    monkeypatch.setattr(app_module, "ART_CACHE", art_dir)
+    monkeypatch.setattr(app_module.images, "get_or_fetch", lambda *a, **kw: art_path)
+
+    class RecordingPrinter:
+        def print_image(self, img):
+            pass
+
+    app.dependency_overrides[get_printer] = lambda: RecordingPrinter()
+    client = TestClient(app_module.app)
+    response = client.post("/api/cards/print", json={"id": "id-3"})
+    app.dependency_overrides.clear()
+
+    assert response.json() == {"ok": True, "art": True}
+
+
+def test_card_print_can_be_asked_for_text_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ART_ROWS))
+
+    def explode(*a, **kw):
+        raise AssertionError("art must not be fetched when the caller opted out")
+
+    monkeypatch.setattr(app_module.images, "get_or_fetch", explode)
+
+    class RecordingPrinter:
+        def print_image(self, img):
+            pass
+
+    app.dependency_overrides[get_printer] = lambda: RecordingPrinter()
+    client = TestClient(app_module.app)
+    response = client.post("/api/cards/print", json={"id": "id-3", "art": False})
+    app.dependency_overrides.clear()
+
+    assert response.json() == {"ok": True, "art": False}

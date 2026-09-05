@@ -369,3 +369,64 @@ def test_stats_of_an_ingested_plain_planeswalker_is_just_its_loyalty():
         "loyalty": "3",
     }
     assert card_label._stats(_round_trip(entry)) == "3"
+
+
+# --- artwork labels ---------------------------------------------------------
+
+
+def _fake_art(width=626, height=457):
+    """A gradient stands in for artwork: it dithers, unlike a flat fill."""
+    art = Image.new("L", (width, height))
+    art.putdata([(x * 255) // max(1, width - 1) for _ in range(height) for x in range(width)])
+    return art
+
+
+def test_render_with_art_matches_the_label_size_and_mode():
+    img = card_label.render_with_art(VANILLA, _fake_art())
+    assert img.size == (card_label.LABEL_WIDTH_DOTS, card_label.LABEL_HEIGHT_DOTS)
+    assert img.mode == "1"
+
+
+def test_render_with_art_draws_ink_in_the_art_column():
+    img = card_label.render_with_art(VANILLA, _fake_art())
+    column = img.crop((0, 0, card_label.ART_COLUMN_DOTS, img.height))
+    assert _ink_bbox(column) is not None
+
+
+def test_render_with_art_keeps_the_text_at_full_size():
+    """The point of cropping to art: the text must not shrink to fit beside it.
+
+    A whole-card image scaled to this label would put rules text near 11 dots,
+    under the 16-dot floor where 203 DPI output turns to smudge. Rendering the
+    text ourselves into the remaining column keeps it legible.
+    """
+    divider = 2  # width of the rule drawn between the art column and the text
+    with_art = card_label.render_with_art(PLANESWALKER, _fake_art())
+    text_region = with_art.crop(
+        (card_label.ART_COLUMN_DOTS + divider, 0, with_art.width, with_art.height)
+    )
+    assert _ink_bbox(text_region) is not None
+
+    # Same text into the same width, so the two must agree pixel for pixel;
+    # anything else means the art column changed how the text was laid out.
+    alone = card_label.render(
+        PLANESWALKER,
+        width=with_art.width - card_label.ART_COLUMN_DOTS,
+        height=with_art.height,
+    )
+    assert text_region.tobytes() == alone.crop(
+        (divider, 0, alone.width, alone.height)
+    ).tobytes()
+
+
+def test_render_with_art_crops_rather_than_letterboxes_a_landscape_crop():
+    # A wide art crop fitted whole into a portrait column would leave most of
+    # the column blank; every row of the column should carry some art.
+    img = card_label.render_with_art(VANILLA, _fake_art(1200, 300))
+    column = img.crop((0, 0, card_label.ART_COLUMN_DOTS, img.height))
+    assert _ink_bbox(column)[3] > img.height * 0.8
+
+
+def test_render_with_art_accepts_a_tiny_art_image():
+    img = card_label.render_with_art(VANILLA, _fake_art(4, 3))
+    assert img.size == (card_label.LABEL_WIDTH_DOTS, card_label.LABEL_HEIGHT_DOTS)

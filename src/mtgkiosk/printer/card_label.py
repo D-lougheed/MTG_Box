@@ -278,6 +278,51 @@ def _stats(card: Card) -> str:
     return " // ".join(parts)
 
 
+ART_COLUMN_DOTS = 240
+
+
+def render_with_art(
+    card: Card,
+    art: Image.Image,
+    width: int = LABEL_WIDTH_DOTS,
+    height: int = LABEL_HEIGHT_DOTS,
+) -> Image.Image:
+    """The text label with the card's artwork down the left-hand side.
+
+    Takes Scryfall's art_crop - the artwork alone, no frame or text - rather
+    than the whole card. Printing a whole card scaled to a 2in label would put
+    its rules text at roughly 11 dots, below the 16-dot floor this module
+    already established as the point where 203 DPI thermal output turns to
+    grey smudge. Cropping to the art and re-rendering the text ourselves keeps
+    the text at full size and gives the artwork a column wide enough to survive
+    Floyd-Steinberg dithering.
+
+    The art is cropped to fill its column rather than letterboxed: the crop is
+    landscape and the column is portrait, so fitting it whole would waste most
+    of the label on white space.
+    """
+    img = Image.new(_MODE, (width, height), color=_WHITE)
+
+    column = min(ART_COLUMN_DOTS, width // 2)
+    grey = art.convert("L")
+    scale = max(column / grey.width, height / grey.height)
+    scaled = grey.resize(
+        (max(1, round(grey.width * scale)), max(1, round(grey.height * scale))),
+        Image.LANCZOS,
+    )
+    left = (scaled.width - column) // 2
+    top = (scaled.height - height) // 2
+    panel = scaled.crop((left, top, left + column, top + height))
+    # Dithered, not thresholded: a hard threshold turns artwork into blobs,
+    # while error diffusion holds tone at the printer's one bit per dot.
+    img.paste(panel.convert(_MODE, dither=Image.FLOYDSTEINBERG), (0, 0))
+
+    text = render(card, width=width - column, height=height)
+    img.paste(text, (column, 0))
+    ImageDraw.Draw(img).line([(column, 0), (column, height)], fill=_BLACK, width=2)
+    return img
+
+
 def render(
     card: Card,
     width: int = LABEL_WIDTH_DOTS,

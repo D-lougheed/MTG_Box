@@ -219,17 +219,22 @@ def _color_list(card: dict, faces: list[dict], key: str) -> str:
     return ",".join(str(colour) for colour in values)
 
 
-def _image_uri(card: dict, faces: list[dict]) -> str | None:
-    """The normal-size JPEG URL, falling back to face 0 on a double-faced card.
+def _image_uri(card: dict, faces: list[dict], size: str = "normal") -> str | None:
+    """One image URL of the given size, falling back to face 0 on a DFC.
 
     A card with no image anywhere stores NULL rather than failing the ingest:
     the lookup UI already treats a missing image as normal, and losing a
     multi-minute download over one artless card would be absurd.
+
+    "art_crop" is stored alongside "normal" because the print path wants the
+    artwork without the frame. Rewriting the normal URL's path to derive it
+    happens to work today, but that structure is undocumented and would break
+    silently rather than loudly.
     """
     for source in (card, *faces[:1]):
         uris = source.get("image_uris")
-        if isinstance(uris, dict) and uris.get("normal"):
-            return str(uris["normal"])
+        if isinstance(uris, dict) and uris.get(size):
+            return str(uris[size])
     return None
 
 
@@ -289,6 +294,7 @@ def card_row(card: dict) -> tuple | None:
         "set_name": card.get("set_name"),
         "layout": card.get("layout"),
         "image_uri": _image_uri(card, faces),
+        "art_crop_uri": _image_uri(card, faces, "art_crop"),
         "scryfall_uri": card.get("scryfall_uri"),
     }
     return tuple(values[field] for field in _FIELDS)

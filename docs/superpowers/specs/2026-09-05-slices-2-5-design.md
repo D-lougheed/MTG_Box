@@ -126,6 +126,20 @@ Canvas is **609 x 406 dots** (3in x 2in at 203 DPI), the confirmed production la
 
 Fonts resolve through a candidate list (Pi's DejaVu first, then common Windows faces, finally Pillow's built-in bitmap font) so tests run anywhere. Only the Pi ever prints, so a dev machine falling back to a different face is cosmetic. Tests assert layout behaviour — that it fits, wraps, and truncates — never exact pixels.
 
+### Artwork on the label — added 2026-09-05
+
+Slice 1 ruled that the print path never needs card art, on the grounds that a monochrome 203 DPI head can't reproduce it. Half of that holds and half doesn't, and the difference is *which* image you print.
+
+**Printing the whole card image is worse than text alone.** A card is 3.5in tall; scaled into a 2in label it renders at 57%, putting its rules text at roughly 11 dots. This module already established 16 dots as the floor where 203 DPI thermal output stops being readable and becomes grey smudge — so a whole-card print is *less* legible than the text label it would replace, while also wasting a third of the label on white space either side of a portrait card in a landscape frame.
+
+**Printing the artwork alone works well.** Scryfall's `art_crop` is the illustration with no frame or text. Given a 240-dot column and Floyd-Steinberg dithering it stays clearly recognisable, and the remaining 369 dots render the text at exactly the size it would get on a text-only label — verified pixel-for-pixel in tests. So `render_with_art()` puts art down the left and the same text renderer down the right.
+
+The art is cropped to fill its column rather than fitted whole: `art_crop` is landscape and the column is portrait, so fitting would leave most of the column blank.
+
+`art_crop_uri` is stored as its own column rather than derived by rewriting the `normal` URL's path. That rewrite happens to work, but the URL structure is undocumented and would break silently.
+
+**Art never blocks a print.** `POST /api/cards/print` takes `art` (default true) and falls back to the text label whenever the artwork is missing, uncached and unreachable, or unreadable. At a table with no network the label still comes out; the response reports which was used.
+
 ### API
 
 | Method | Path | Purpose |

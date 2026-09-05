@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS cards (
     set_name       TEXT,
     layout         TEXT,
     image_uri      TEXT,
+    art_crop_uri   TEXT,
     scryfall_uri   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
@@ -45,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_cards_type_line ON cards(type_line);
 _COLUMNS = (
     "id, name, mana_cost, cmc, type_line, oracle_text, power, toughness, "
     "loyalty, colors, color_identity, rarity, set_code, set_name, layout, "
-    "image_uri, scryfall_uri"
+    "image_uri, art_crop_uri, scryfall_uri"
 )
 
 
@@ -71,6 +72,10 @@ class Card:
     set_name: str | None = None
     layout: str | None = None
     image_uri: str | None = None
+    # Just the artwork, no frame or text. The print path uses this rather than
+    # the full card: a whole card scaled to a 2in label puts its rules text at
+    # about 11 dots, below the 16-dot floor already found to print as a smudge.
+    art_crop_uri: str | None = None
     scryfall_uri: str | None = None
 
     def to_dict(self) -> dict:
