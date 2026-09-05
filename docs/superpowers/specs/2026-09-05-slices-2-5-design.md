@@ -221,7 +221,7 @@ The cache is unbounded by design: the whole Oracle set at ~100 KB per image is r
 
 ### Bulk pre-download — added 2026-09-05
 
-On-demand caching covers a table with wifi. Going fully offline means fetching everything up front, and measured against the real set that is **3.52 GB of card images plus 2.66 GB of art crops — 6.2 GB over ~69,000 requests**. At the 50-100ms spacing Scryfall's API guidelines ask for, the pacing alone accounts for about an hour of a roughly two-and-a-half hour run.
+On-demand caching covers a table with wifi. Going fully offline means fetching everything up front, and measured against the real set that is **3.52 GB of card images plus 2.66 GB of art crops — 6.2 GB over ~69,000 requests**. Measured end to end at 5.5 images per second, that is about **three and a half hours** — 100ms per image of deliberate pacing plus roughly 80ms of actual transfer.
 
 Three properties matter more than throughput, because this runs for hours on an appliance that can be switched off mid-job:
 

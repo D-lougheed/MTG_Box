@@ -8,12 +8,15 @@ Three properties matter more than speed here, because this is a multi-hour job
 on an appliance that can be switched off at any moment:
 
 - **Resumable.** Anything already cached is skipped without a request, so a
-  re-run after a reboot costs a directory scan rather than another 2.5 hours.
+  re-run after a reboot costs a directory scan rather than another 3.5 hours.
 - **Cancellable.** `should_stop` is checked every card, so stopping is quick
   rather than waiting out the remaining thousands.
 - **Paced.** Scryfall asks for 50-100ms between requests and this makes ~69k of
   them against a free service. The delay applies only to real downloads - a
   resume skims cached entries at full speed.
+
+Measured end to end at 5.5 images/sec, about 3.5 hours for a full run: 100ms of
+that per image is the deliberate pacing, ~80ms the actual transfer.
 
 A card that fails is counted and stepped over. Losing hours of progress because
 one image 404s would be absurd.
@@ -35,6 +38,10 @@ from . import images
 logger = logging.getLogger(__name__)
 
 REQUEST_DELAY = 0.1
+
+# How often progress reaches the UI. Frequent enough that the count visibly
+# moves, which is the only signal a multi-hour job is alive.
+PROGRESS_INTERVAL = 0.5
 
 # Measured over a random sample of the real set: ~97 KB per card image and
 # ~78 KB per art crop. Used only to refuse a run that clearly cannot fit, so a
@@ -130,26 +137,37 @@ def prefetch(
     state = PrefetchProgress(total=count_targets(db_path, kinds))
     if progress:
         progress(state)
+    last_report = time.monotonic()
 
-    for card_id, kind, url in _targets(db_path, kinds):
-        if stop():
-            logger.info("image prefetch stopped after %d of %d", state.done, state.total)
-            break
+    # One reused connection for the whole run. Every image comes from the same
+    # host, and a fresh TLS handshake per image measured 406ms against 128ms
+    # reusing one - the difference between a ten-hour download and a four-hour
+    # one.
+    with images.ImageDownloader() as downloader:
+        for card_id, kind, url in _targets(db_path, kinds):
+            if stop():
+                logger.info("image prefetch stopped after %d of %d", state.done, state.total)
+                break
 
-        cache_dir = caches[kind]
-        if images.get_cached(cache_dir, card_id) is not None:
-            state = replace(state, done=state.done + 1, skipped=state.skipped + 1)
-        elif images.fetch(cache_dir, card_id, url) is not None:
-            state = replace(state, done=state.done + 1, downloaded=state.downloaded + 1)
-            # Only after a real request: a resume must not crawl through
-            # thousands of already-cached entries at 100ms each.
-            time.sleep(delay)
-        else:
-            state = replace(state, done=state.done + 1, failed=state.failed + 1)
-            time.sleep(delay)
+            cache_dir = caches[kind]
+            if images.get_cached(cache_dir, card_id) is not None:
+                state = replace(state, done=state.done + 1, skipped=state.skipped + 1)
+            elif downloader.fetch(cache_dir, card_id, url) is not None:
+                state = replace(state, done=state.done + 1, downloaded=state.downloaded + 1)
+                # Only after a real request: a resume must not crawl through
+                # thousands of already-cached entries at 100ms each.
+                time.sleep(delay)
+            else:
+                state = replace(state, done=state.done + 1, failed=state.failed + 1)
+                time.sleep(delay)
 
-        if progress and state.done % 25 == 0:
-            progress(state)
+            # Reported on a clock rather than every Nth card. Counting made the
+            # number sit still for ~17s at real download rates, which on a
+            # kiosk is indistinguishable from a hang.
+            now = time.monotonic()
+            if progress and now - last_report >= PROGRESS_INTERVAL:
+                progress(state)
+                last_report = now
 
     if progress:
         progress(state)

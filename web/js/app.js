@@ -196,9 +196,10 @@ document.querySelectorAll("[data-print-mode]").forEach((button) => {
 });
 renderPrintMode(getPrintMode());
 
-// Downloading every card image is ~69k requests over roughly two and a half
-// hours, so it reports a real count and offers a way out. It resumes where it
-// left off, which is why stopping is safe rather than destructive.
+// Downloading every card image is ~69k requests over roughly three and a half
+// hours, so it reports a real count and offers a way out. It runs in the
+// backend, not here, so leaving Settings doesn't interrupt it - and it resumes
+// where it left off, which is why stopping is safe rather than destructive.
 function renderImagesStatus(images) {
   const statusEl = document.getElementById("images-status");
   const startButton = document.getElementById("images-prefetch-button");
@@ -249,7 +250,7 @@ document.getElementById("images-prefetch-button").addEventListener("click", asyn
       button.disabled = false;
       return;
     }
-    note.textContent = "downloading — this takes a couple of hours, and resumes if interrupted";
+    note.textContent = "downloading — about three and a half hours. Carry on using the device; it keeps going and resumes if interrupted.";
     refreshCardsStatus();
   } catch (err) {
     note.textContent = "couldn't start: " + firstLine(err.message);
