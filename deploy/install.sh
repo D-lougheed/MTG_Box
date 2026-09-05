@@ -10,6 +10,10 @@ sudo cp "$REPO_DIR/deploy/99-mtg-printer.rules" /etc/udev/rules.d/99-mtg-printer
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
+sudo visudo -c -f "$REPO_DIR/deploy/mtgkiosk-sudoers"
+sudo cp "$REPO_DIR/deploy/mtgkiosk-sudoers" /etc/sudoers.d/mtgkiosk
+sudo chmod 0440 /etc/sudoers.d/mtgkiosk
+
 python3 -m venv "$REPO_DIR/.venv"
 "$REPO_DIR/.venv/bin/pip" install -r "$REPO_DIR/requirements.txt"
 

@@ -1,0 +1,5 @@
+# Lets the mtgkiosk service (running as `admin`) restart itself after
+# pulling an update, without hitting an interactive polkit prompt that a
+# detached systemd-run job can never answer. Scoped to exactly this one
+# command - nothing else is granted.
+admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart mtgkiosk.service

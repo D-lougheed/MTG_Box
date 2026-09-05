@@ -125,7 +125,22 @@ def post_update_apply() -> dict:
     if result.returncode != 0:
         logger.error("pip install failed after update pull (returncode %s); aborting restart", result.returncode)
         raise HTTPException(status_code=502, detail="dependency install failed after update; restart aborted")
-    subprocess.run(["systemd-run", "--on-active=2", "systemctl", "restart", "mtgkiosk"])
+    # A plain (non-sudo) restart here would hit an interactive polkit prompt
+    # that a detached systemd-run job can never answer - it depends on the
+    # NOPASSWD sudoers rule installed by deploy/install.sh
+    # (deploy/mtgkiosk-sudoers), scoped to exactly this command.
+    schedule_result = subprocess.run(
+        ["systemd-run", "--on-active=2", "sudo", "/usr/bin/systemctl", "restart", "mtgkiosk.service"]
+    )
+    if schedule_result.returncode != 0:
+        logger.error(
+            "failed to schedule restart (returncode %s); update pulled but service was not restarted",
+            schedule_result.returncode,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="update applied but restart could not be scheduled; restart the service manually",
+        )
     return {"restarting": True}
 
 

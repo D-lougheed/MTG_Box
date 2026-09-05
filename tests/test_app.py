@@ -91,6 +91,49 @@ def test_update_apply_returns_502_and_skips_restart_when_pip_install_fails(monke
     assert not any("systemctl" in str(c) for c in calls)
 
 
+def test_update_apply_returns_200_when_pip_and_restart_succeed(monkeypatch):
+    monkeypatch.setattr(app_module, "apply_update", lambda repo_dir: None)
+
+    calls = []
+
+    class FakeResult:
+        def __init__(self, returncode):
+            self.returncode = returncode
+
+    def fake_run(args, *a, **kw):
+        calls.append(args)
+        return FakeResult(returncode=0)
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+
+    client = TestClient(app_module.app)
+    response = client.post("/api/update/apply")
+
+    assert response.status_code == 200
+    assert response.json() == {"restarting": True}
+    assert any("systemd-run" in str(c) for c in calls)
+
+
+def test_update_apply_returns_502_when_restart_scheduling_fails(monkeypatch):
+    monkeypatch.setattr(app_module, "apply_update", lambda repo_dir: None)
+
+    class FakeResult:
+        def __init__(self, returncode):
+            self.returncode = returncode
+
+    def fake_run(args, *a, **kw):
+        if "systemd-run" in args:
+            return FakeResult(returncode=1)
+        return FakeResult(returncode=0)
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+
+    client = TestClient(app_module.app)
+    response = client.post("/api/update/apply")
+
+    assert response.status_code == 502
+
+
 def test_wifi_scan_returns_networks(monkeypatch):
     monkeypatch.setattr(app_module, "wifi_scan", lambda: [
         __import__("mtgkiosk.wifi", fromlist=["WifiNetwork"]).WifiNetwork(ssid="Test", signal=80, secured=True)
