@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,10 +17,14 @@ from pydantic import BaseModel
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__
+from . import __version__, cards, horde, images
+from .cards import CardDatabaseError
+from .horde import HordeError
+from .ingest import ingest as ingest_cards
+from .printer import card_label
 from .printer.device import PrinterError, ThermalPrinter
 from .updater import UpdateError, apply as apply_update, check as check_update
 from .wifi import WifiError, connect as wifi_connect, scan as wifi_scan
@@ -28,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 REPO_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+DATA_DIR = REPO_DIR / "data"
+CARDS_DB = DATA_DIR / "cards.sqlite"
+IMAGE_CACHE = DATA_DIR / "images"
 
 app = FastAPI()
 
@@ -62,6 +70,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 class WifiConnectRequest(BaseModel):
     ssid: str
     password: str | None = None
+
+
+class CardPrintRequest(BaseModel):
+    id: str
+
+
+class HordeDeckRequest(BaseModel):
+    subtype: str
+    difficulty: str = "normal"
 
 
 @lru_cache
@@ -174,6 +191,129 @@ def post_wifi_connect(body: WifiConnectRequest) -> dict:
         logger.warning("wifi connect failed for ssid=%s: %s", body.ssid, e)
         raise HTTPException(status_code=502, detail="Couldn't connect. Check the password and try again.") from e
     return {"connected": True}
+
+
+# Literal card routes are declared before /api/cards/{card_id} because FastAPI
+# matches in declaration order - otherwise "status" and "random" would be
+# captured as card ids.
+
+
+# A rebuild downloads ~140 MB and takes minutes, far longer than a request can
+# be held open, so it runs on a background thread and the UI polls for progress.
+_ingest_state: dict = {"running": False, "stage": "", "done": 0, "total": None, "error": None}
+_ingest_lock = threading.Lock()
+
+
+def _run_ingest() -> None:
+    def progress(stage: str, done: int, total: int | None) -> None:
+        with _ingest_lock:
+            _ingest_state.update(stage=stage, done=done, total=total)
+
+    try:
+        written = ingest_cards(CARDS_DB, progress)
+    except Exception as e:
+        # Deliberately broad: this runs on a background thread with no caller
+        # to propagate to, and anything escaping here would strand running=True
+        # forever, leaving the Settings screen stuck on "updating…" with no way
+        # to retry short of restarting the service.
+        logger.warning("card ingest failed: %s", e)
+        with _ingest_lock:
+            _ingest_state.update(running=False, stage="failed", error=str(e))
+        return
+    with _ingest_lock:
+        _ingest_state.update(running=False, stage="done", done=written, error=None)
+
+
+@app.get("/api/cards/status")
+def get_cards_status() -> dict:
+    with _ingest_lock:
+        state = dict(_ingest_state)
+    return {
+        "available": cards.is_available(CARDS_DB),
+        "count": cards.count(CARDS_DB),
+        "updating": state["running"],
+        "progress": (
+            {"stage": state["stage"], "done": state["done"], "total": state["total"]}
+            if state["running"]
+            else None
+        ),
+        "error": state["error"],
+    }
+
+
+@app.post("/api/cards/update")
+def post_cards_update() -> dict:
+    with _ingest_lock:
+        if _ingest_state["running"]:
+            raise HTTPException(status_code=409, detail="an update is already running")
+        _ingest_state.update(running=True, stage="starting", done=0, total=None, error=None)
+    threading.Thread(target=_run_ingest, daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/cards/random")
+def get_cards_random() -> dict:
+    try:
+        return cards.random_card(CARDS_DB).to_dict()
+    except CardDatabaseError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@app.get("/api/cards/search")
+def get_cards_search(q: str = "") -> list[dict]:
+    return [card.to_dict() for card in cards.search(CARDS_DB, q)]
+
+
+@app.post("/api/cards/print")
+def post_cards_print(body: CardPrintRequest, printer: ThermalPrinter = Depends(get_printer)) -> dict:
+    card = cards.get(CARDS_DB, body.id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="card not found")
+    try:
+        printer.print_image(card_label.render(card))
+    except PrinterError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return {"ok": True}
+
+
+@app.get("/api/horde/subtypes")
+def get_horde_subtypes() -> dict:
+    try:
+        subtypes = horde.available_subtypes(CARDS_DB)
+    except HordeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return {"subtypes": subtypes}
+
+
+@app.post("/api/horde/deck")
+def post_horde_deck(body: HordeDeckRequest) -> dict:
+    try:
+        deck = horde.build_deck(CARDS_DB, body.subtype, body.difficulty)
+    except HordeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return deck.to_dict()
+
+
+@app.get("/api/cards/{card_id}")
+def get_card(card_id: str) -> dict:
+    card = cards.get(CARDS_DB, card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="card not found")
+    return card.to_dict()
+
+
+@app.get("/api/cards/{card_id}/image")
+def get_card_image(card_id: str) -> FileResponse:
+    card = cards.get(CARDS_DB, card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="card not found")
+    path = images.get_or_fetch(IMAGE_CACHE, card_id, card.image_uri)
+    if path is None:
+        # Offline, or the card genuinely has no art. Either way the lookup
+        # screen treats a missing image as normal, so this is a 404 rather
+        # than an error the UI has to explain.
+        raise HTTPException(status_code=404, detail="image unavailable")
+    return FileResponse(str(path), media_type="image/jpeg")
 
 
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

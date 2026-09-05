@@ -1,0 +1,703 @@
+/* Horde Mode. The game screen wants the whole 800x480 panel, so the view's
+   own padding is dropped here and each screen carries its own instead - that
+   also lets the win/lose overlay cover the panel edge to edge. */
+#view-horde-mode {
+  padding: 0;
+}
+
+#horde-root {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  /* Shades derived from the palette in style.css. They live here as named
+     values because CSS can't compute a translucent or raised variant of a
+     custom property without color-mix(), which is newer than the Chromium
+     build on the Pi is guaranteed to be. */
+  --horde-line: #2a2c34;
+  --horde-raised: #262932;
+  --horde-on-accent: #1a1a1a;
+  --horde-danger-glow: rgba(192, 57, 43, 0.45);
+  --horde-scrim: rgba(20, 21, 26, 0.92);
+  --horde-shadow: rgba(0, 0, 0, 0.5);
+}
+
+#horde-root button {
+  font-family: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.horde-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.horde-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.horde-back {
+  margin-top: 0;
+  align-self: auto;
+  flex: none;
+}
+
+.horde-primary {
+  min-height: 52px;
+  padding: 0 30px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--horde-on-accent);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.horde-primary:disabled {
+  opacity: 0.4;
+}
+
+.horde-secondary {
+  min-height: 52px;
+  padding: 0 24px;
+  border: none;
+  border-radius: 10px;
+  background: var(--horde-raised);
+  color: var(--text);
+  font-size: 16px;
+}
+
+/* ---------- setup ---------- */
+
+.horde-setup-head {
+  flex: none;
+  margin-bottom: 10px;
+}
+
+.horde-setup-title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.horde-setup-sub {
+  margin: 3px 0 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.horde-setup-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.horde-status {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.horde-subtype-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-content: start;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.horde-chip {
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  overflow: hidden;
+}
+
+/* flex: none on every label inside a column button: without it the flex
+   algorithm shrinks the line box below the font size and clips ascenders. */
+.horde-chip-name {
+  flex: none;
+  font-size: 16px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.horde-chip-count {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.horde-chip--on {
+  border-color: var(--accent);
+  background: var(--horde-raised);
+}
+
+.horde-chip--on .horde-chip-name {
+  color: var(--accent);
+}
+
+.horde-options {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* The difficulty buttons carry a second line of detail, so they get the widest
+   share - at any narrower it wraps and the three groups stop lining up. */
+.horde-option-group--difficulty {
+  flex: 4;
+}
+
+.horde-option-group--players {
+  flex: 3;
+}
+
+.horde-option-group--life {
+  flex: 3;
+}
+
+.horde-option-row {
+  display: flex;
+  gap: 6px;
+}
+
+.horde-option {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.horde-option-label {
+  flex: none;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.horde-option-detail {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.horde-option--on {
+  border-color: var(--accent);
+  background: var(--horde-raised);
+}
+
+.horde-option--on .horde-option-label {
+  color: var(--accent);
+}
+
+.horde-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.horde-footer-message {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+  text-align: right;
+}
+
+/* ---------- no card database ---------- */
+
+.horde-nodb {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 80px;
+}
+
+.horde-nodb-icon {
+  font-size: 40px;
+  opacity: 0.7;
+}
+
+.horde-nodb-title {
+  margin: 10px 0 6px 0;
+  font-size: 22px;
+}
+
+.horde-nodb-text {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.horde-nodb-detail {
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.horde-nodb-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ---------- game header ---------- */
+
+.horde-header {
+  flex: none;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.horde-header-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.horde-header-name {
+  font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.horde-header-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.horde-stat {
+  flex: none;
+  min-width: 96px;
+  padding: 4px 10px 6px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.horde-stat-label {
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.horde-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.horde-stat--off .horde-stat-value {
+  color: var(--muted);
+}
+
+.horde-stat--warn .horde-stat-value {
+  color: var(--accent);
+}
+
+/* Past twenty power the horde is killing a full-life player every turn, so the
+   number stops being a readout and starts being a warning. */
+.horde-stat--danger .horde-stat-value {
+  color: var(--danger);
+}
+
+.horde-stat--danger {
+  animation: horde-threat 2.2s ease-in-out infinite;
+}
+
+@keyframes horde-threat {
+  0%, 100% { box-shadow: 0 0 0 1px var(--danger); }
+  50% { box-shadow: 0 0 14px 2px var(--horde-danger-glow); }
+}
+
+.horde-abandon {
+  flex: none;
+  min-height: 44px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 14px;
+}
+
+/* ---------- battlefield ---------- */
+
+.horde-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.horde-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px 10px 10px;
+  background: var(--surface);
+  border-radius: 12px;
+}
+
+.horde-field-head {
+  flex: none;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.horde-field-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.horde-undo {
+  flex: none;
+  max-width: 230px;
+  min-height: 40px;
+  padding: 0 16px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.horde-field-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.horde-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  gap: 8px;
+}
+
+.horde-field-empty {
+  margin: 40px 0 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.horde-creature {
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: 1px solid var(--horde-line);
+  border-left: 3px solid var(--danger);
+  border-radius: 8px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.horde-creature-name {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.2;
+  max-height: 29px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.horde-creature-pt {
+  flex: none;
+  align-self: flex-end;
+  font-size: 17px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.horde-creature:active {
+  background: var(--surface);
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.horde-creature--new {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.horde-creature--reveal {
+  animation: horde-reveal 420ms ease-out;
+}
+
+@keyframes horde-reveal {
+  0% { transform: scale(0.8); opacity: 0; }
+  60% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ---------- players and the horde turn ---------- */
+
+.horde-side {
+  flex: none;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.horde-players {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.horde-player {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface);
+  border: 2px solid transparent;
+  border-radius: 12px;
+}
+
+.horde-step {
+  flex: none;
+  width: 54px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: none;
+  border-radius: 8px;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.horde-step:active {
+  background: var(--accent);
+  color: var(--horde-on-accent);
+}
+
+.horde-player-centre {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.horde-player-name {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.horde-player-life {
+  flex: none;
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.horde-players--1 .horde-player-life { font-size: 96px; }
+.horde-players--2 .horde-player-life { font-size: 68px; }
+.horde-players--3 .horde-player-life { font-size: 50px; }
+
+/* At one or two players the tile is tall enough that a full-height stepper
+   stops reading as a button and starts reading as a divider. */
+.horde-players--1 .horde-step,
+.horde-players--2 .horde-step {
+  align-self: center;
+  height: 132px;
+}
+
+.horde-player--low {
+  border-color: var(--accent);
+}
+
+.horde-player--low .horde-player-life {
+  color: var(--accent);
+}
+
+.horde-player--out {
+  border-color: var(--danger);
+  opacity: 0.7;
+}
+
+.horde-player--out .horde-player-life {
+  color: var(--danger);
+}
+
+.horde-turn-button {
+  flex: none;
+  height: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--horde-on-accent);
+  border: none;
+  border-radius: 12px;
+}
+
+.horde-turn-label {
+  flex: none;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.horde-turn-detail {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.3;
+  opacity: 0.75;
+}
+
+.horde-turn-button:active {
+  filter: brightness(0.88);
+}
+
+.horde-turn-button:disabled {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* ---------- outcome and confirmation overlay ---------- */
+
+.horde-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--horde-scrim);
+}
+
+.horde-overlay-panel {
+  width: 640px;
+  padding: 26px 28px;
+  background: var(--surface);
+  border-radius: 16px;
+  border-top: 5px solid var(--muted);
+  box-shadow: 0 12px 40px var(--horde-shadow);
+  text-align: center;
+}
+
+.horde-overlay--win .horde-overlay-panel { border-top-color: var(--ok); }
+.horde-overlay--lose .horde-overlay-panel { border-top-color: var(--danger); }
+.horde-overlay--confirm .horde-overlay-panel { border-top-color: var(--accent); }
+
+.horde-overlay-title {
+  margin: 0 0 8px 0;
+  font-size: 34px;
+}
+
+.horde-overlay--win .horde-overlay-title { color: var(--ok); }
+.horde-overlay--lose .horde-overlay-title { color: var(--danger); }
+
+.horde-overlay-message {
+  margin: 0 0 22px 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.horde-overlay-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.horde-overlay-button {
+  min-height: 52px;
+  min-width: 150px;
+  padding: 0 20px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.horde-overlay-button--primary {
+  background: var(--accent);
+  color: var(--horde-on-accent);
+  font-weight: 600;
+}

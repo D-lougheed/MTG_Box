@@ -1,0 +1,560 @@
+/* Random card (Slice 2) and card lookup (Slice 4).
+
+   Mana and rarity colours are card data, not theme, so they live as tokens
+   scoped to these two views rather than in the shared palette. */
+#view-random-card,
+#view-card-lookup {
+  --mana-w: #fbf8e3;
+  --mana-u: #b3ddf5;
+  --mana-b: #c9bfbc;
+  --mana-r: #f4a488;
+  --mana-g: #9fd2ae;
+  --mana-c: #cfc9c4;
+  --pip-ink: #16171c;
+  --rarity-common: #b6b8c0;
+  --rarity-uncommon: #a9bcc9;
+  --rarity-rare: var(--accent);
+  --rarity-mythic: #dd6b32;
+  --rule: rgba(255, 255, 255, 0.09);
+}
+
+#random-card-root,
+#card-lookup-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cards-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 20px;
+}
+
+.cards-screen-column {
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.cards-button {
+  min-height: 56px;
+  padding: 0 18px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.cards-button-primary {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+.cards-button-tall {
+  min-height: 64px;
+  font-size: 19px;
+}
+
+/* No hover on a touchscreen, so press feedback is the only affordance. */
+.cards-button:active {
+  border-color: var(--text);
+}
+
+.cards-button:disabled {
+  opacity: 0.45;
+}
+
+#view-random-card .back-button,
+#view-card-lookup .back-button {
+  margin-top: 0;
+  align-self: stretch;
+  min-height: 48px;
+  font-family: inherit;
+}
+
+/* -------------------------------------------------------------- card panel */
+
+.cards-panel-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.cards-panel-slot.is-loading {
+  opacity: 0.45;
+}
+
+.card-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px 14px 22px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.card-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.card-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.card-name {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  overflow-wrap: anywhere;
+}
+
+.card-cost {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.card-type {
+  flex: none;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.card-meta {
+  flex: none;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.75;
+}
+
+/* Rules text is the reading surface of this whole app: a serif at a
+   comfortable measure separates it from the sans-serif chrome around it. */
+.card-rules {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 12px;
+  padding: 12px 4px 4px 0;
+  border-top: 1px solid var(--rule);
+  font-family: Georgia, "DejaVu Serif", "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.52;
+}
+
+.card-rules-line {
+  margin: 0 0 11px 0;
+}
+
+.card-rules-line:last-child {
+  margin-bottom: 0;
+}
+
+.card-rules-break {
+  height: 1px;
+  margin: 14px 0 15px 0;
+  background: var(--rule);
+}
+
+.card-rules-empty {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 15px;
+}
+
+.card-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.card-set {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-rarity {
+  flex: none;
+  font-weight: 700;
+  color: var(--rarity-common);
+}
+
+.rarity-uncommon { color: var(--rarity-uncommon); }
+.rarity-rare { color: var(--rarity-rare); }
+.rarity-mythic { color: var(--rarity-mythic); }
+
+.card-stat {
+  flex: none;
+  margin-left: auto;
+  padding: 3px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.card-stat-loyalty {
+  border-radius: 50%;
+  padding: 3px 10px;
+}
+
+/* ----------------------------------------------------------------- mana pips */
+
+.mana-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 5px;
+  border-radius: 12px;
+  background: var(--mana-c);
+  color: var(--pip-ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mana-w { background: var(--mana-w); }
+.mana-u { background: var(--mana-u); }
+.mana-b { background: var(--mana-b); }
+.mana-r { background: var(--mana-r); }
+.mana-g { background: var(--mana-g); }
+.mana-hybrid {
+  background: linear-gradient(135deg, var(--pip-a) 0 50%, var(--pip-b) 50% 100%);
+}
+
+.card-rules .mana-pip {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 11px;
+  vertical-align: -3px;
+  margin: 0 1px;
+}
+
+/* ------------------------------------------------------------- random card */
+
+.cards-actions {
+  flex: none;
+  width: 206px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Keeps the last control clear of the fixed dice button in the corner. */
+  padding-bottom: 64px;
+}
+
+/* Same shape as every other screen: the way out sits at the bottom, away from
+   the actions the user is actually reaching for. */
+#view-random-card .cards-actions .back-button {
+  margin-top: auto;
+}
+
+.cards-status {
+  margin: 4px 0 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.cards-status.is-ok {
+  color: var(--ok);
+}
+
+.cards-status.is-bad {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------- card lookup */
+
+.lookup-header {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.lookup-input {
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  padding: 0 16px;
+  border: 2px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 20px;
+}
+
+.lookup-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.lookup-input::placeholder {
+  color: var(--muted);
+}
+
+.lookup-icon-button {
+  width: 56px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.lookup-keyboard-button {
+  width: 116px;
+  padding: 0;
+  font-size: 16px;
+}
+
+/* Two columns: 800px is far wider than a card name needs, and the on-screen
+   keyboard leaves only ~150px of list, so this doubles what's visible while
+   the user is still typing. */
+.lookup-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: the nowrap card names inside would otherwise set
+     an automatic minimum column width and scroll the list sideways. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding: 2px 2px 56px 2px;
+}
+
+.lookup-result {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 6px 14px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+}
+
+.lookup-result:active {
+  border-color: var(--accent);
+}
+
+/* Explicit line heights and flex:none: these two lines are ellipsised, so
+   letting the flex row shrink them would clip descenders instead of the
+   text. */
+.lookup-result-name {
+  flex: none;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lookup-result-type {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lookup-hint {
+  grid-column: 1 / -1;
+  margin: 10px 2px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+/* The keyboard is a 256px fixed overlay; shrinking the view instead of
+   padding it keeps the results list scrollable inside what's left. */
+body.keyboard-open #view-card-lookup {
+  height: 224px;
+  padding: 14px 18px 6px 18px;
+}
+
+body.keyboard-open .lookup-input,
+body.keyboard-open #view-card-lookup .cards-button {
+  min-height: 48px;
+  height: 48px;
+}
+
+body.keyboard-open .lookup-results {
+  padding-bottom: 2px;
+}
+
+/* ------------------------------------------------------------ card detail */
+
+.card-detail-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Shrink-to-fit so the failure chip hugs its message instead of becoming a
+   full-width banner across the header. */
+.card-detail-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 440px;
+  margin: 0 0 0 auto;
+  text-align: right;
+}
+
+.card-detail-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 18px;
+}
+
+/* This footer is the one row that reaches the bottom-right corner, where the
+   fixed dice button floats. */
+.card-detail-body .card-foot {
+  padding-right: 72px;
+}
+
+.card-image {
+  position: relative;
+  flex: none;
+  align-self: center;
+  width: 250px;
+  height: 348px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.card-image-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.card-image-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.card-image-photo.is-loaded {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------ notice state */
+
+.cards-notice {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cards-notice-inner {
+  max-width: 560px;
+  text-align: center;
+}
+
+.cards-notice-title {
+  margin: 0 0 12px 0;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.cards-notice-body {
+  margin: 0 0 26px 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.cards-notice-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.cards-notice-actions .back-button {
+  align-self: auto;
+  min-height: 56px;
+}
+
+/* --------------------------------------------------------------- scrollbars */
+
+#view-random-card ::-webkit-scrollbar,
+#view-card-lookup ::-webkit-scrollbar {
+  width: 8px;
+}
+
+#view-random-card ::-webkit-scrollbar-thumb,
+#view-card-lookup ::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}

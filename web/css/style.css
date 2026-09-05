@@ -124,7 +124,8 @@ h2 {
   background: #444;
 }
 
-#selftest-button, #update-check-button, #update-apply-button, #wifi-settings-button {
+#selftest-button, #update-check-button, #update-apply-button, #wifi-settings-button,
+#cards-update-button {
   margin-top: 16px;
   align-self: flex-start;
   padding: 14px 20px;

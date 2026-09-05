@@ -1,0 +1,600 @@
+/* The life counter is the one view that wants the whole panel: at eight players
+   every pixel of a tile is a touch target, so it opts out of the shared 24px
+   view padding rather than losing 10% of the grid to it. */
+#view-life-counter {
+  padding: 0;
+  position: relative;
+}
+
+/* The dice FAB would otherwise sit over the +1 half of the corner tile and
+   swallow taps meant for a life total. It is hidden by showView() in app.js
+   rather than by a sibling selector here, so it doesn't depend on the FAB
+   staying after this view in index.html. */
+
+#life-counter-root {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+
+  /* The house palette has a single accent; a table of up to eight players needs
+     eight seat colours that stay separable on the dark ground. */
+  --lc-seat-1: #e05c4a;
+  --lc-seat-2: #4f9be8;
+  --lc-seat-3: #4cb782;
+  --lc-seat-4: #d4a53f;
+  --lc-seat-5: #b07de0;
+  --lc-seat-6: #e07ab0;
+  --lc-seat-7: #46c4c9;
+  --lc-seat-8: #9bbf4a;
+}
+
+.lc-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.lc-label {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lc-button {
+  min-height: 46px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 17px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.lc-button-primary {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+.lc-button-ghost {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.lc-button-danger {
+  background: transparent;
+  color: var(--danger);
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+
+.lc-button:active {
+  filter: brightness(1.25);
+}
+
+/* Setup */
+
+.lc-setup {
+  padding: 20px 24px 16px 24px;
+}
+
+.lc-setup-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 24px;
+}
+
+.lc-setup-choices {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lc-setup-preview {
+  width: 268px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Deliberately the screen's own proportions: the point of the preview is that
+   it reads as a small picture of the table. */
+.lc-preview-grid {
+  height: 158px;
+  display: grid;
+  grid-template-columns: repeat(var(--lc-cols), 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 5px;
+}
+
+.lc-preview-cell {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: inset 0 -3px 0 var(--lc-seat);
+  color: var(--lc-seat);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lc-preview-cell.lc-rotated {
+  transform: rotate(180deg);
+}
+
+.lc-preview-note {
+  margin: 12px 0 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.lc-choice-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.lc-choice {
+  flex: 1;
+  height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 2px transparent;
+}
+
+.lc-choice-wide {
+  height: 64px;
+  font-size: 26px;
+}
+
+.lc-choice.lc-chosen {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.lc-start {
+  margin-top: auto;
+  min-height: 58px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.lc-setup-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.lc-setup-footer .back-button {
+  margin-top: 0;
+}
+
+/* Game grid */
+
+.lc-game {
+  position: relative;
+  padding: 8px;
+}
+
+.lc-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--lc-cols), 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+}
+
+.lc-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+/* Rotating the far row is the whole point of a table-centre device: the players
+   opposite read their own total the right way up, and because the tile itself
+   is rotated its left half stays their -1. */
+.lc-tile.lc-rotated {
+  transform: rotate(180deg);
+}
+
+/* Seat colour washes in from the edge nearest that player. */
+.lc-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--lc-seat), transparent 60%);
+  opacity: 0.17;
+  pointer-events: none;
+}
+
+.lc-tile::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 4px;
+  border-radius: 3px 3px 0 0;
+  background: var(--lc-seat);
+  pointer-events: none;
+}
+
+.lc-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.7;
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lc-zone-minus {
+  left: 0;
+  justify-content: flex-start;
+}
+
+.lc-zone-plus {
+  right: 0;
+  justify-content: flex-end;
+}
+
+.lc-zone.lc-pressed {
+  background: rgba(255, 255, 255, 0.09);
+  opacity: 1;
+}
+
+.lc-tile-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Corner-set rather than centred: a centred name lands underneath the hub
+   button wherever a tile edge meets the middle of the grid, which is every
+   layout with an odd number of columns. */
+.lc-name {
+  position: absolute;
+  top: 9px;
+  left: 14px;
+  right: 14px;
+  text-align: left;
+  font-size: var(--lc-name-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--lc-seat);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lc-life {
+  pointer-events: auto;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 14px;
+  /* A soft plinth rather than an outline: the number has to look tappable
+     without reading as a text field. */
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: var(--lc-life-size);
+  font-weight: 600;
+  line-height: 1.06;
+  font-variant-numeric: tabular-nums;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lc-life.lc-life-wide {
+  font-size: calc(var(--lc-life-size) * 0.68);
+}
+
+.lc-life:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.lc-badges {
+  position: absolute;
+  bottom: 10px;
+  display: flex;
+  gap: 5px;
+}
+
+.lc-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.lc-badge-lethal,
+.lc-badge-dead {
+  background: var(--danger);
+  color: var(--text);
+}
+
+/* Dead players keep their seat — they just stop being the loud thing on screen. */
+.lc-tile.lc-dead {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--surface);
+}
+
+.lc-tile.lc-dead::before {
+  opacity: 0.05;
+}
+
+.lc-tile.lc-dead::after {
+  background: var(--danger);
+  opacity: 0.65;
+}
+
+.lc-tile.lc-dead .lc-name,
+.lc-tile.lc-dead .lc-life {
+  color: var(--muted);
+}
+
+.lc-tile.lc-dead .lc-life {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.lc-tile.lc-dead .lc-zone {
+  opacity: 0.25;
+}
+
+.lc-hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid var(--bg);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lc-hub:active {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+/* Overlays. No z-index anywhere: these come after the grid in the DOM so they
+   paint over it, and the shared on-screen keyboard comes after the whole view
+   so it still paints over them while a name is being typed. */
+
+.lc-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 12, 0.74);
+}
+
+.lc-card {
+  width: 340px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lc-card .lc-button-ghost {
+  background: var(--bg);
+}
+
+.lc-button.lc-confirming {
+  color: var(--danger);
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+
+/* Detail panel */
+
+.lc-detail-card {
+  width: 100%;
+  height: 100%;
+  padding: 14px 18px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 4px 0 var(--lc-seat);
+}
+
+.lc-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lc-detail-name {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lc-seat);
+  font-size: 24px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lc-detail-life {
+  margin-right: auto;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 78px;
+  text-align: center;
+}
+
+.lc-detail-life-dead {
+  color: var(--danger);
+}
+
+.lc-detail-close {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.lc-name-editor-row {
+  display: flex;
+  gap: 10px;
+}
+
+.lc-name-input {
+  flex: 1;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  font-size: 18px;
+}
+
+.lc-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.lc-cmd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.lc-cmd-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.lc-cmd-grid-wide {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.lc-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.lc-stepper-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lc-seat, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lc-stepper-value {
+  min-width: 34px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-step {
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lc-step.lc-pressed {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+/* 21 commander damage or 10 poison is lethal, and has to read as lethal from
+   across the table, not as one more number in a grid. */
+.lc-stepper.lc-lethal {
+  background: var(--danger);
+}
+
+.lc-stepper.lc-lethal .lc-stepper-label,
+.lc-stepper.lc-lethal .lc-stepper-value {
+  color: var(--text);
+}
+
+.lc-stepper-poison {
+  max-width: 50%;
+}
+
+.lc-detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.lc-detail-actions .lc-button {
+  flex: 1;
+}
+
+/* While the keyboard is up it covers everything below roughly the halfway mark,
+   so the panel collapses to the one row being edited. */
+.lc-detail-card.lc-editing .lc-detail-head,
+.lc-detail-card.lc-editing .lc-detail-body,
+.lc-detail-card.lc-editing .lc-detail-actions {
+  display: none;
+}

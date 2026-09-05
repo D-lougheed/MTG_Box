@@ -1,3 +1,22 @@
+// Each feature script owns one view and may expose a hook that runs when that
+// view becomes visible. Looked up by name at call time rather than wired
+// directly, so a feature script that fails to load can't stop the rest of the
+// menu from working - on a kiosk, a broken sub-screen must not cost you the
+// life counter mid-game.
+const VIEW_HOOKS = {
+  "settings": "onSettingsShown",
+  "life-counter": "onLifeCounterShown",
+  "random-card": "onRandomCardShown",
+  "card-lookup": "onCardLookupShown",
+  "horde-mode": "onHordeShown",
+};
+
+// The dice button is fixed bottom-right, which on the game screens sits over a
+// real control - the corner player's +1 zone in the life counter, the last row
+// of the horde battlefield. Hidden centrally rather than by each feature's CSS,
+// so it can't depend on element order in this file.
+const FAB_HIDDEN_VIEWS = new Set(["life-counter", "horde-mode", "random-card", "card-lookup"]);
+
 function showView(name) {
   const target = document.getElementById(`view-${name}`);
   if (!target) {
@@ -7,6 +26,20 @@ function showView(name) {
   hideKeyboard();
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   target.classList.remove("hidden");
+  document.getElementById("random-card-fab").classList.toggle("hidden", FAB_HIDDEN_VIEWS.has(name));
+
+  const hook = VIEW_HOOKS[name];
+  if (hook && typeof window[hook] === "function") {
+    try {
+      window[hook]();
+    } catch (err) {
+      console.error(`${hook} failed`, err);
+    }
+  }
+}
+
+function onSettingsShown() {
+  refreshCardsStatus();
 }
 
 function firstLine(text, maxLength = 80) {
@@ -46,6 +79,62 @@ async function refreshStatus() {
 
 setInterval(refreshStatus, 5000);
 refreshStatus();
+
+// Polled faster than the 5s status loop only while an ingest is running, since
+// a download-and-rebuild takes minutes and a stalled-looking progress line on a
+// kiosk with no terminal is indistinguishable from a hang.
+let cardsPollTimer = null;
+
+async function refreshCardsStatus() {
+  const statusEl = document.getElementById("cards-status");
+  const button = document.getElementById("cards-update-button");
+  try {
+    const response = await fetch("/api/cards/status");
+    const data = await response.json();
+
+    if (data.updating) {
+      const done = data.progress ? data.progress.done : 0;
+      statusEl.textContent = "updating… " + done.toLocaleString() + " cards";
+      button.disabled = true;
+      if (cardsPollTimer === null) cardsPollTimer = setInterval(refreshCardsStatus, 1500);
+      return;
+    }
+
+    if (cardsPollTimer !== null) {
+      clearInterval(cardsPollTimer);
+      cardsPollTimer = null;
+    }
+    button.disabled = false;
+    statusEl.textContent = data.available ? data.count.toLocaleString() + " cards" : "not downloaded";
+    button.textContent = data.available ? "Update card database" : "Download card database";
+    if (data.error) {
+      document.getElementById("cards-update-status").textContent = "last update failed: " + firstLine(data.error);
+    }
+  } catch (err) {
+    statusEl.textContent = "unknown";
+  }
+}
+
+document.getElementById("cards-update-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const status = document.getElementById("cards-update-status");
+  button.disabled = true;
+  status.textContent = "starting…";
+  try {
+    const response = await fetch("/api/cards/update", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "update failed: " + firstLine(data.detail || response.status);
+      button.disabled = false;
+      return;
+    }
+    status.textContent = "downloading from Scryfall, this takes a few minutes…";
+    refreshCardsStatus();
+  } catch (err) {
+    status.textContent = "update failed: " + firstLine(err.message);
+    button.disabled = false;
+  }
+});
 
 document.getElementById("selftest-button").addEventListener("click", async (event) => {
   const button = event.currentTarget;

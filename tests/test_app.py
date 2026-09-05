@@ -1,3 +1,6 @@
+import threading
+import time
+
 from fastapi.testclient import TestClient
 
 import mtgkiosk.app as app_module
@@ -184,3 +187,153 @@ def test_wifi_connect_validation_error_does_not_echo_password():
     response = client.post("/api/wifi/connect", json={"password": "hunter2-super-secret"})
     assert response.status_code == 422
     assert "hunter2-super-secret" not in response.text
+
+
+def _seed_cards_db(tmp_path, rows):
+    """Build a minimal card database and point the app at it."""
+    import sqlite3
+
+    from mtgkiosk import cards as cards_module
+
+    db_path = tmp_path / "cards.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    cards_module.create_schema(conn)
+    conn.executemany(
+        "INSERT INTO cards (id, name, type_line, oracle_text, power, toughness, cmc, image_uri)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+ZOMBIE_ROWS = [
+    ("id-1", "Rotting Regisaur", "Creature — Zombie Dinosaur", "Trample.", "7", "6", 3.0, None),
+    ("id-2", "Diregraf Ghoul", "Creature — Zombie", "Enters tapped.", "2", "2", 1.0, "https://img.test/2.jpg"),
+]
+
+
+def test_cards_status_reports_unavailable_without_a_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "missing.sqlite")
+    client = TestClient(app_module.app)
+    body = client.get("/api/cards/status").json()
+    assert body["available"] is False
+    assert body["count"] == 0
+    assert body["updating"] is False
+
+
+def test_cards_random_returns_503_without_a_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "missing.sqlite")
+    client = TestClient(app_module.app)
+    assert client.get("/api/cards/random").status_code == 503
+
+
+def test_cards_search_returns_empty_list_without_a_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "missing.sqlite")
+    client = TestClient(app_module.app)
+    response = client.get("/api/cards/search", params={"q": "bolt"})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_cards_status_and_random_work_against_a_real_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    client = TestClient(app_module.app)
+    status = client.get("/api/cards/status").json()
+    assert status["available"] is True
+    assert status["count"] == 2
+    body = client.get("/api/cards/random").json()
+    assert body["name"] in {"Rotting Regisaur", "Diregraf Ghoul"}
+    assert "has_image" in body
+
+
+def test_cards_search_ranks_prefix_matches_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    client = TestClient(app_module.app)
+    names = [card["name"] for card in client.get("/api/cards/search", params={"q": "di"}).json()]
+    assert names == ["Diregraf Ghoul"]
+
+
+def test_get_card_returns_404_for_unknown_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    client = TestClient(app_module.app)
+    assert client.get("/api/cards/nope").status_code == 404
+
+
+def test_card_image_returns_404_when_card_has_no_image(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    monkeypatch.setattr(app_module, "IMAGE_CACHE", tmp_path / "images")
+    client = TestClient(app_module.app)
+    assert client.get("/api/cards/id-1/image").status_code == 404
+
+
+def test_card_print_returns_404_for_unknown_card(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    client = TestClient(app_module.app)
+    assert client.post("/api/cards/print", json={"id": "nope"}).status_code == 404
+
+
+def test_card_print_returns_503_when_printer_is_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+
+    class DeadPrinter:
+        def print_image(self, img):
+            raise PrinterError("printer not connected")
+
+    app.dependency_overrides[get_printer] = lambda: DeadPrinter()
+    client = TestClient(app_module.app)
+    response = client.post("/api/cards/print", json={"id": "id-1"})
+    app.dependency_overrides.clear()
+    assert response.status_code == 503
+
+
+def test_horde_subtypes_returns_503_without_a_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "missing.sqlite")
+    client = TestClient(app_module.app)
+    assert client.get("/api/horde/subtypes").status_code == 503
+
+
+def test_horde_deck_returns_503_when_subtype_pool_is_too_small(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", _seed_cards_db(tmp_path, ZOMBIE_ROWS))
+    client = TestClient(app_module.app)
+    response = client.post("/api/horde/deck", json={"subtype": "Zombie", "difficulty": "normal"})
+    assert response.status_code == 503
+
+
+def test_cards_update_starts_a_background_ingest(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "cards.sqlite")
+    finished = threading.Event()
+
+    def fake_ingest(db_path, progress=None):
+        if progress:
+            progress("downloading", 500, None)
+        finished.set()
+        return 500
+
+    monkeypatch.setattr(app_module, "ingest_cards", fake_ingest)
+    client = TestClient(app_module.app)
+    assert client.post("/api/cards/update").json() == {"started": True}
+    assert finished.wait(timeout=5)
+
+
+def test_cards_update_records_failure_instead_of_stranding_the_running_flag(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "CARDS_DB", tmp_path / "cards.sqlite")
+    attempted = threading.Event()
+
+    def exploding_ingest(db_path, progress=None):
+        attempted.set()
+        raise RuntimeError("scryfall unreachable")
+
+    monkeypatch.setattr(app_module, "ingest_cards", exploding_ingest)
+    client = TestClient(app_module.app)
+    client.post("/api/cards/update")
+    assert attempted.wait(timeout=5)
+
+    for _ in range(50):
+        body = client.get("/api/cards/status").json()
+        if not body["updating"]:
+            break
+        time.sleep(0.05)
+    assert body["updating"] is False
+    assert "scryfall unreachable" in body["error"]
