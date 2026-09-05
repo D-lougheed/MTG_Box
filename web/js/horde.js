@@ -444,39 +444,60 @@ function buildHordeGameScreen() {
 // Held down rather than tapped, because horde damage arrives in double figures
 // every turn and tapping -1 nineteen times is exactly the arithmetic chore this
 // screen exists to remove.
+//
+// Keyed by pointer id, because a repeat is per finger. Two players adjusting at
+// once is normal at a four-player table, and while every stepper shared one
+// window-level stop, either finger's release cancelled both repeats: lifting one
+// froze the other while it was still held down.
+const hordeRepeats = new Map();
+
+// A repeat that outlives its press is worse than a frozen one. adjustHordeLife
+// re-reads the module-level hordeGame every tick, so an orphan follows whatever
+// game is current: holding -1 and tapping Menu with a second finger drained 40
+// life while the kiosk sat on the main menu, and abandoning mid-hold carried the
+// drain straight into the next game's totals.
+function stopHordeRepeat(pointerId) {
+  const entry = hordeRepeats.get(pointerId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  hordeRepeats.delete(pointerId);
+}
+
+function stopAllHordeRepeats() {
+  hordeRepeats.forEach((entry) => clearTimeout(entry.timer));
+  hordeRepeats.clear();
+}
+
 function attachHordeStepper(buttonEl, index, delta) {
-  let timer = null;
-  let repeats = 0;
-
-  function stop() {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-    window.removeEventListener("pointerup", stop);
-    window.removeEventListener("pointercancel", stop);
-  }
-
-  function repeat() {
-    repeats += 1;
-    adjustHordeLife(index, delta);
-    timer = setTimeout(repeat, repeats > 8 ? 55 : 130);
-  }
-
   buttonEl.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    stop();
-    repeats = 0;
+    const pointerId = event.pointerId;
+    stopHordeRepeat(pointerId);
+    const entry = { timer: null, repeats: 0 };
+    hordeRepeats.set(pointerId, entry);
     adjustHordeLife(index, delta);
-    timer = setTimeout(repeat, 420);
-    // Listening on the window, not the button: a finger that slides off the
-    // key still has to stop the repeat.
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
+    const repeat = () => {
+      entry.repeats += 1;
+      adjustHordeLife(index, delta);
+      entry.timer = setTimeout(repeat, entry.repeats > 8 ? 55 : 130);
+    };
+    entry.timer = setTimeout(repeat, 420);
   });
 }
 
+// Listening on the window, not the button: a finger that slides off the key
+// still has to stop the repeat - but only its own. blur and visibilitychange
+// are the same guards the life counter carries: a press that ends while the
+// kiosk is switching away never delivers a pointerup at all.
+window.addEventListener("pointerup", (event) => stopHordeRepeat(event.pointerId));
+window.addEventListener("pointercancel", (event) => stopHordeRepeat(event.pointerId));
+window.addEventListener("blur", stopAllHordeRepeats);
+document.addEventListener("visibilitychange", stopAllHordeRepeats);
+
 function buildHordePlayers() {
+  // The tiles about to be thrown away may have a finger on them. Their repeats
+  // would survive into the game being built here and keep adjusting it.
+  stopAllHordeRepeats();
   hordeUi.playersEl.innerHTML = "";
   hordeUi.playersEl.className = "horde-players horde-players--" + hordeGame.players.length;
   hordeUi.playerNodes = [];
@@ -690,6 +711,7 @@ function confirmAbandonHorde() {
 }
 
 function abandonHordeGame() {
+  stopAllHordeRepeats();
   hordeGame = null;
   hordeUndo = null;
   saveHordeGame();
@@ -747,6 +769,12 @@ function enterHordeGame() {
   showHordeScreen("game");
   if (hordeGame.over) showHordeOutcome();
   else hideHordeOverlay();
+}
+
+// Nothing else notices the view going away, and a stepper held while the player
+// taps Menu with a second finger never gets a pointerup on this screen.
+function onHordeHidden() {
+  stopAllHordeRepeats();
 }
 
 function onHordeShown() {

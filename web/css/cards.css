@@ -122,6 +122,10 @@
   gap: 14px;
 }
 
+/* Clamped, because the name is a label and the rules box is the reading
+   surface. The 141-character joke card runs to six lines and 173px, which left
+   its rules text a 43px window over 93px of content. Three lines fits every
+   name a real card has, and hands the rest of the panel back. */
 .card-name {
   margin: 0;
   font-size: 25px;
@@ -129,6 +133,10 @@
   line-height: 1.15;
   letter-spacing: 0.005em;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .card-cost {
@@ -284,8 +292,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Keeps the last control clear of the fixed dice button in the corner. */
-  padding-bottom: 64px;
 }
 
 /* Same shape as every other screen: the way out sits at the bottom, away from
@@ -463,12 +469,6 @@ body.keyboard-open .lookup-results {
   min-height: 0;
   display: flex;
   gap: 18px;
-}
-
-/* This footer is the one row that reaches the bottom-right corner, where the
-   fixed dice button floats. */
-.card-detail-body .card-foot {
-  padding-right: 72px;
 }
 
 .card-image {

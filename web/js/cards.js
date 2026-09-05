@@ -419,7 +419,14 @@
   lookupRoot.appendChild(detailPane);
   lookupRoot.appendChild(lookupNotice.root);
 
+  /* The on-screen keyboard is global state, shared with the wifi screens, so
+     nothing here may touch it once this view is off screen. Both directions have
+     bitten: a slow /api/cards/status landing after the user left reopened the
+     keyboard over the life counter, burying six of its thirteen controls with no
+     way out, and a stale no-database verdict closed it under someone halfway
+     through typing a wifi password. */
   function setKeyboardOpen(open) {
+    if (!isViewVisible("card-lookup")) return;
     keyboardOpen = open;
     keyboardButton.textContent = open ? "Done" : "Keyboard";
     if (open) {
@@ -565,6 +572,17 @@
     rollCard();
   }
 
+  // Both hidden hooks bump the token their in-flight work checks after every
+  // await. Without this the tokens only ever moved on the way *in*, so a reply
+  // that arrived after the view was left still passed its own staleness guard.
+  function onRandomCardHidden() {
+    randomToken += 1;
+  }
+
+  function onCardLookupHidden() {
+    lookupShowToken += 1;
+  }
+
   async function onCardLookupShown() {
     const token = ++lookupShowToken;
     searchToken += 1;
@@ -593,5 +611,7 @@
   }
 
   window.onRandomCardShown = onRandomCardShown;
+  window.onRandomCardHidden = onRandomCardHidden;
   window.onCardLookupShown = onCardLookupShown;
+  window.onCardLookupHidden = onCardLookupHidden;
 })();

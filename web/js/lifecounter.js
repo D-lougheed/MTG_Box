@@ -22,7 +22,7 @@ const LC_REPEAT_DECAY = 0.82;
 let lcGame = null;
 let lcTiles = [];
 let lcBuiltCount = 0;
-let lcRepeatTimer = null;
+const lcRepeats = new Map();
 let lcDetail = null;
 let lcDetailIndex = -1;
 let lcResetConfirmTimer = null;
@@ -141,45 +141,64 @@ function lcLoad() {
 /* Press-and-hold. A repeat timer that outlives its press would silently drain a
    player's life with nobody touching the screen, so the press captures the
    pointer (the release always comes back to us) and every plausible end-of-press
-   signal cancels, including window-level ones the tile itself never sees. */
+   signal cancels, including window-level ones the tile itself never sees.
 
-function lcStopRepeat() {
-  if (lcRepeatTimer !== null) {
-    clearTimeout(lcRepeatTimer);
-    lcRepeatTimer = null;
-  }
+   One repeat per pointer id, not one for the whole table. A single shared slot
+   meant a second finger's pointerdown cancelled the first finger's repeat and
+   either finger's release cancelled the other's: at eight players, seat 1
+   counting down froze the moment seat 2 joined in, still holding, and lost its
+   press highlight with it. Two players adjusting at once is the normal case. */
+
+function lcStopRepeat(pointerId) {
+  const entry = lcRepeats.get(pointerId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  entry.el.classList.remove("lc-pressed");
+  lcRepeats.delete(pointerId);
+}
+
+function lcStopAllRepeats() {
+  lcRepeats.forEach((entry) => {
+    clearTimeout(entry.timer);
+    entry.el.classList.remove("lc-pressed");
+  });
+  lcRepeats.clear();
+  // A tile torn down mid-press leaves its highlight on an element the map has
+  // already forgotten, so the sweep stays as the backstop it always was.
   document.querySelectorAll(".lc-pressed").forEach((el) => el.classList.remove("lc-pressed"));
 }
 
 function lcBindRepeat(el, apply) {
   el.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    lcStopRepeat();
+    const pointerId = event.pointerId;
+    lcStopRepeat(pointerId);
     const target = event.currentTarget;
     target.classList.add("lc-pressed");
     try {
-      target.setPointerCapture(event.pointerId);
+      target.setPointerCapture(pointerId);
     } catch (err) {
       // Capture is best-effort; the window-level listeners below still cancel.
     }
     apply();
-    let interval = LC_REPEAT_FIRST;
+    const entry = { el: target, timer: null, interval: LC_REPEAT_FIRST };
+    lcRepeats.set(pointerId, entry);
     const tick = () => {
       apply();
-      interval = Math.max(LC_REPEAT_FASTEST, Math.round(interval * LC_REPEAT_DECAY));
-      lcRepeatTimer = setTimeout(tick, interval);
+      entry.interval = Math.max(LC_REPEAT_FASTEST, Math.round(entry.interval * LC_REPEAT_DECAY));
+      entry.timer = setTimeout(tick, entry.interval);
     };
-    lcRepeatTimer = setTimeout(tick, LC_REPEAT_DELAY);
+    entry.timer = setTimeout(tick, LC_REPEAT_DELAY);
   });
   ["pointerup", "pointercancel", "pointerleave", "lostpointercapture"].forEach((name) => {
-    el.addEventListener(name, lcStopRepeat);
+    el.addEventListener(name, (event) => lcStopRepeat(event.pointerId));
   });
 }
 
-window.addEventListener("pointerup", lcStopRepeat);
-window.addEventListener("pointercancel", lcStopRepeat);
-window.addEventListener("blur", lcStopRepeat);
-document.addEventListener("visibilitychange", lcStopRepeat);
+window.addEventListener("pointerup", (event) => lcStopRepeat(event.pointerId));
+window.addEventListener("pointercancel", (event) => lcStopRepeat(event.pointerId));
+window.addEventListener("blur", lcStopAllRepeats);
+document.addEventListener("visibilitychange", lcStopAllRepeats);
 
 /* Game state changes. */
 
@@ -339,7 +358,7 @@ function lcRenderSetup() {
    under an active auto-repeat and strand its timer. */
 
 function lcBuildGrid() {
-  lcStopRepeat();
+  lcStopAllRepeats();
   lcGrid.innerHTML = "";
   lcTiles = [];
   const count = lcGame.players.length;
@@ -529,7 +548,7 @@ function lcBuildDetail(index) {
 }
 
 function lcOpenDetail(index) {
-  lcStopRepeat();
+  lcStopAllRepeats();
   lcDetailIndex = index;
   lcDetail = lcBuildDetail(index);
   lcDetailOverlay.classList.remove("hidden");
@@ -539,7 +558,7 @@ function lcOpenDetail(index) {
 function lcCloseDetail() {
   if (lcDetail) lcDetail.card.classList.remove("lc-editing");
   hideKeyboard();
-  lcStopRepeat();
+  lcStopAllRepeats();
   lcDetailOverlay.classList.add("hidden");
   lcDetailOverlay.innerHTML = "";
   lcDetail = null;
@@ -625,7 +644,7 @@ function lcCloseControls() {
 }
 
 lcHubButton.addEventListener("click", () => {
-  lcStopRepeat();
+  lcStopAllRepeats();
   lcControlsOverlay.classList.remove("hidden");
 });
 
@@ -636,8 +655,14 @@ function lcShowScreen(name) {
   lcGameScreen.classList.toggle("hidden", name !== "game");
 }
 
+// A press that ends after the view is gone never delivers a pointerup here, and
+// its repeat would keep adjusting a life total nobody can see.
+function onLifeCounterHidden() {
+  lcStopAllRepeats();
+}
+
 function onLifeCounterShown() {
-  lcStopRepeat();
+  lcStopAllRepeats();
   lcCloseDetail();
   lcCloseControls();
   if (!lcGame) lcGame = lcLoad();
