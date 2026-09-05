@@ -12,9 +12,14 @@ const VIEW_HOOKS = {
 };
 
 // The dice button is fixed bottom-right, which on the game screens sits over a
-// real control - the corner player's +1 zone in the life counter, the last row
-// of the horde battlefield. Hidden centrally rather than by each feature's CSS,
-// so it can't depend on element order in this file.
+// real control - the corner player's +1 zone in the life counter, the right end
+// of horde mode's Horde turn button, the loyalty badge on a looked-up card.
+// Hidden centrally rather than by each feature's CSS, so it can't depend on
+// element order in index.html.
+//
+// This is load-bearing, not cosmetic: lifecounter.css and horde.css both
+// dropped the gutter they were reserving for the FAB once this existed.
+// Removing a view from this set puts the dice back on top of a live control.
 const FAB_HIDDEN_VIEWS = new Set(["life-counter", "horde-mode", "random-card", "card-lookup"]);
 
 function showView(name) {
