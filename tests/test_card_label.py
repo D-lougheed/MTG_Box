@@ -109,10 +109,19 @@ def test_render_draws_ink(card):
 
 @pytest.mark.parametrize("card", ALL_CARDS, ids=lambda c: c.name.split("\n")[0])
 def test_ink_stays_inside_the_canvas(card):
+    """Ink must respect the margin, not merely land inside the image.
+
+    getbbox() reports a box of pixels within the image by construction, so
+    comparing it against the image bounds can never fail no matter what
+    render() does. The margin is the real contract, and it is what a thermal
+    head's edge tolerance actually needs.
+    """
     img = render(card)
     left, top, right, bottom = _ink_bbox(img)
-    assert left >= 0 and top >= 0
-    assert right <= img.width and bottom <= img.height
+    margin = card_label._MARGIN
+    assert left >= margin - 1 and top >= margin - 1
+    assert right <= img.width - margin + 1
+    assert bottom <= img.height - margin + 1
 
 
 def test_vanilla_creature_renders_with_its_power_toughness():
@@ -131,8 +140,10 @@ def test_card_with_neither_text_nor_stats_leaves_no_dangling_rule():
 
 
 def test_wall_of_text_is_truncated_rather_than_overrunning():
+    # Against the bottom margin, not the image edge: bbox is inside the image
+    # by construction, so the edge comparison could never have failed.
     img = render(WALL_OF_TEXT)
-    assert _ink_bbox(img)[3] <= img.height
+    assert _ink_bbox(img)[3] <= img.height - card_label._MARGIN + 1
 
 
 # --- font resolution -------------------------------------------------------
@@ -285,3 +296,76 @@ def test_stats_mixes_power_toughness_and_loyalty_across_faces():
 
 def test_stats_is_empty_when_the_card_has_neither():
     assert card_label._stats(_card()) == ""
+
+
+# --- ingest round trip ------------------------------------------------------
+# These cross the seam between ingest.card_row() and _stats(). Every other test
+# in this file hand-builds a Card, which is how _stats came to assume a wire
+# format the ingest never emits: it expected empty face positions to be kept,
+# while the ingest drops them, so loyalty vanished from every flip-walker.
+
+
+def _round_trip(entry: dict):
+    """A Scryfall bulk entry taken through the real ingest into a Card."""
+    import sqlite3
+
+    from mtgkiosk import cards as cards_module
+    from mtgkiosk import ingest
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    cards_module.create_schema(conn)
+    row = ingest.card_row(entry)
+    assert row is not None
+    conn.execute(
+        f"INSERT INTO cards ({', '.join(f.name for f in __import__('dataclasses').fields(Card))}) "
+        f"VALUES ({', '.join(['?'] * len(row))})",
+        row,
+    )
+    stored = conn.execute("SELECT * FROM cards").fetchone()
+    return Card(**{key: stored[key] for key in stored.keys()})
+
+
+FLIP_WALKER = {
+    "oracle_id": "jace-vryn",
+    "name": "Jace, Vryn's Prodigy // Jace, Telepath Unbound",
+    "layout": "transform",
+    "type_line": "Creature — Human Wizard // Legendary Planeswalker — Jace",
+    "card_faces": [
+        {"name": "Jace, Vryn's Prodigy", "power": "0", "toughness": "2", "oracle_text": "Tap: draw."},
+        {"name": "Jace, Telepath Unbound", "loyalty": "5", "oracle_text": "+1: target creature."},
+    ],
+}
+
+
+def test_stats_keeps_loyalty_on_a_card_ingested_as_creature_then_planeswalker():
+    card = _round_trip(FLIP_WALKER)
+    # The ingest drops the empty face positions, so power/toughness/loyalty
+    # arrive with no separators at all - the exact shape _stats got wrong.
+    assert (card.power, card.toughness, card.loyalty) == ("0", "2", "5")
+    assert card_label._stats(card) == "0/2 // 5"
+
+
+def test_stats_pairs_both_faces_of_an_ingested_double_faced_creature():
+    entry = {
+        "oracle_id": "delver",
+        "name": "Delver of Secrets // Insectile Aberration",
+        "layout": "transform",
+        "type_line": "Creature — Human Wizard // Creature — Human Insect",
+        "card_faces": [
+            {"name": "Delver of Secrets", "power": "1", "toughness": "1"},
+            {"name": "Insectile Aberration", "power": "3", "toughness": "2"},
+        ],
+    }
+    assert card_label._stats(_round_trip(entry)) == "1/1 // 3/2"
+
+
+def test_stats_of_an_ingested_plain_planeswalker_is_just_its_loyalty():
+    entry = {
+        "oracle_id": "jace-tms",
+        "name": "Jace, the Mind Sculptor",
+        "layout": "normal",
+        "type_line": "Legendary Planeswalker — Jace",
+        "loyalty": "3",
+    }
+    assert card_label._stats(_round_trip(entry)) == "3"

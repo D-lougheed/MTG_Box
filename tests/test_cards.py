@@ -339,34 +339,39 @@ def test_ingest_without_a_progress_callback_still_works(tmp_path):
 def test_bulk_download_uri_selects_the_oracle_cards_entry():
     payload = {
         "data": [
-            {"type": "default_cards", "download_uri": "https://data.example.invalid/default.json"},
-            {"type": "oracle_cards", "download_uri": "https://data.example.invalid/oracle.json"},
-            {"type": "all_cards", "download_uri": "https://data.example.invalid/all.json"},
-        ]
-    }
-    with patch("mtgkiosk.ingest.urllib.request.urlopen", return_value=_fake_response(payload)):
-        assert ingest_cards.bulk_download_uri() == "https://data.example.invalid/oracle.json"
-
-
-def test_bulk_download_uri_prefers_the_jsonl_export():
-    # Scryfall moved the export to gzipped JSONL and advertises it under a
-    # different key; taking download_uri when both are present would parse the
-    # wrong format.
-    payload = {
-        "data": [
-            {
-                "type": "oracle_cards",
-                "download_uri": "https://data.example.invalid/oracle.json",
-                "jsonl_download_uri": "https://data.example.invalid/oracle.jsonl.gz",
-            }
+            {"type": "default_cards", "jsonl_download_uri": "https://data.example.invalid/default.jsonl.gz"},
+            {"type": "oracle_cards", "jsonl_download_uri": "https://data.example.invalid/oracle.jsonl.gz"},
+            {"type": "all_cards", "jsonl_download_uri": "https://data.example.invalid/all.jsonl.gz"},
         ]
     }
     with patch("mtgkiosk.ingest.urllib.request.urlopen", return_value=_fake_response(payload)):
         assert ingest_cards.bulk_download_uri() == "https://data.example.invalid/oracle.jsonl.gz"
 
 
+def test_bulk_download_uri_ignores_the_retired_json_array_export():
+    """An entry offering only the old key must fail here, naming the real problem.
+
+    ingest() gunzips unconditionally, so accepting `download_uri` - which
+    served an uncompressed JSON array - would fail deep inside gzip with a
+    message about a corrupt archive rather than about the export format having
+    changed underneath us. That is close to how the format change was missed
+    the first time.
+    """
+    payload = {
+        "data": [
+            {
+                "type": "oracle_cards",
+                "download_uri": "https://data.example.invalid/oracle.json",
+            }
+        ]
+    }
+    with patch("mtgkiosk.ingest.urllib.request.urlopen", return_value=_fake_response(payload)):
+        with pytest.raises(ingest_cards.IngestError):
+            ingest_cards.bulk_download_uri()
+
+
 def test_bulk_download_uri_identifies_the_client_to_scryfall():
-    payload = {"data": [{"type": "oracle_cards", "download_uri": "https://data.example.invalid/oracle.json"}]}
+    payload = {"data": [{"type": "oracle_cards", "jsonl_download_uri": "https://data.example.invalid/oracle.jsonl.gz"}]}
     with patch("mtgkiosk.ingest.urllib.request.urlopen", return_value=_fake_response(payload)) as mock_urlopen:
         ingest_cards.bulk_download_uri()
 
@@ -376,7 +381,7 @@ def test_bulk_download_uri_identifies_the_client_to_scryfall():
 
 
 def test_bulk_download_uri_raises_when_the_oracle_cards_entry_is_absent():
-    payload = {"data": [{"type": "default_cards", "download_uri": "https://data.example.invalid/default.json"}]}
+    payload = {"data": [{"type": "default_cards", "jsonl_download_uri": "https://data.example.invalid/default.jsonl.gz"}]}
     with patch("mtgkiosk.ingest.urllib.request.urlopen", return_value=_fake_response(payload)):
         with pytest.raises(ingest_cards.IngestError):
             ingest_cards.bulk_download_uri()
@@ -395,7 +400,7 @@ def test_bulk_download_uri_raises_ingest_error_on_malformed_json():
 
 
 def test_ingest_downloads_the_uri_it_discovered(tmp_path):
-    index = {"data": [{"type": "oracle_cards", "download_uri": "https://data.example.invalid/oracle.json"}]}
+    index = {"data": [{"type": "oracle_cards", "jsonl_download_uri": "https://data.example.invalid/oracle.jsonl.gz"}]}
     responses = [_fake_response(index), _gzipped_jsonl(BULK_FIXTURE)]
 
     db_path = tmp_path / "cards.sqlite"
@@ -403,7 +408,7 @@ def test_ingest_downloads_the_uri_it_discovered(tmp_path):
         written = ingest_cards.ingest(db_path)
 
     assert written == 3
-    assert mock_urlopen.call_args_list[1].args[0].full_url == "https://data.example.invalid/oracle.json"
+    assert mock_urlopen.call_args_list[1].args[0].full_url == "https://data.example.invalid/oracle.jsonl.gz"
 
 
 # --- query layer ------------------------------------------------------------
@@ -589,3 +594,103 @@ def test_ingest_keeps_playable_multi_face_layouts(tmp_path):
         _layout_entry("saga-1", "History of Benalia", "saga"),
     ])
     assert written == 4
+
+
+# --- degradation and query hygiene ------------------------------------------
+
+
+def test_count_is_zero_when_the_table_has_the_wrong_columns(tmp_path):
+    """A schema mismatch must look like "no database", not like a healthy one.
+
+    COUNT(*) succeeds against any shape of table, so probing it alone reported
+    the database as available and then every real query raised. Any future
+    column added to SCHEMA puts already-deployed devices in this state.
+    """
+    db_path = tmp_path / "cards.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE cards (id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute("INSERT INTO cards (id, name) VALUES ('a', 'Old Schema Card')")
+    conn.commit()
+    conn.close()
+
+    assert cards.count(db_path) == 0
+    assert cards.is_available(db_path) is False
+    assert cards.search(db_path, "Old") == []
+    assert cards.get(db_path, "a") is None
+    assert cards.creatures_by_subtype(db_path, "Elf") == []
+    assert cards.subtypes_with_counts(db_path) == []
+    with pytest.raises(cards.CardDatabaseError):
+        cards.random_card(db_path)
+
+
+def test_creatures_by_subtype_treats_like_wildcards_literally(tmp_path):
+    # The subtype arrives from a request body; "%" previously matched every
+    # tribe at once and came back labelled as a deck of subtype "%".
+    db_path = tmp_path / "cards.sqlite"
+    _build_db(db_path, [
+        _creature("1", "Llanowar Elves", "Creature — Elf Druid"),
+        _creature("2", "Goblin Piker", "Creature — Goblin Warrior"),
+    ])
+    assert cards.creatures_by_subtype(db_path, "%") == []
+    assert cards.creatures_by_subtype(db_path, "_") == []
+    assert [c.name for c in cards.creatures_by_subtype(db_path, "Elf")] == ["Llanowar Elves"]
+
+
+def test_subtypes_only_counts_faces_that_are_themselves_creatures(tmp_path):
+    """A transforming Saga must not make "Saga" a creature tribe.
+
+    The SQL matches any card whose whole type line mentions Creature, so a
+    front face of "Enchantment — Saga" was harvesting Saga as a subtype.
+    """
+    db_path = tmp_path / "cards.sqlite"
+    _build_db(db_path, [
+        _creature("1", "Wandering Wolf", "Creature — Wolf"),
+        _creature("2", "Wolf Two", "Creature — Wolf"),
+        _creature("3", "Invasion of Somewhere", "Enchantment — Saga // Enchantment Creature — Human Monk"),
+    ])
+    names = dict(cards.subtypes_with_counts(db_path, minimum=1))
+    assert "Saga" not in names
+    assert names["Wolf"] == 2
+
+
+def test_replace_database_retries_while_a_reader_holds_the_file(tmp_path, monkeypatch):
+    """Windows refuses a rename while any handle is open, and the UI polls.
+
+    The status endpoint opens the database on every poll during the ingest, so
+    on Windows the final rename lands on "Access is denied" and throws away the
+    whole download. Readers are short-lived, so a brief retry closes it.
+    """
+    src = tmp_path / "cards.sqlite.tmp"
+    dst = tmp_path / "cards.sqlite"
+    src.write_bytes(b"new")
+    dst.write_bytes(b"old")
+
+    calls = []
+    real_replace = ingest_cards.os.replace
+
+    def flaky_replace(a, b):
+        calls.append((a, b))
+        if len(calls) < 3:
+            raise PermissionError("[WinError 5] Access is denied")
+        return real_replace(a, b)
+
+    monkeypatch.setattr(ingest_cards.os, "replace", flaky_replace)
+    monkeypatch.setattr(ingest_cards.time, "sleep", lambda _: None)
+
+    ingest_cards._replace_database(src, dst)
+    assert len(calls) == 3
+    assert dst.read_bytes() == b"new"
+
+
+def test_replace_database_gives_up_eventually(tmp_path, monkeypatch):
+    src = tmp_path / "cards.sqlite.tmp"
+    src.write_bytes(b"new")
+
+    def always_denied(a, b):
+        raise PermissionError("[WinError 5] Access is denied")
+
+    monkeypatch.setattr(ingest_cards.os, "replace", always_denied)
+    monkeypatch.setattr(ingest_cards.time, "sleep", lambda _: None)
+
+    with pytest.raises(PermissionError):
+        ingest_cards._replace_database(src, tmp_path / "cards.sqlite", attempts=3)

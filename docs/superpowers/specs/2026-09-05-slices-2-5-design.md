@@ -64,7 +64,9 @@ No FTS5. Search is `LIKE` against 30k rows, which is a few milliseconds on a Pi 
 
 `scripts/ingest_cards.py`, also importable so the API can drive it.
 
-Streams the JSON array with `ijson` rather than `json.load`. The uncompressed export is ~140 MB, which `json.load` inflates to roughly a gigabyte of Python objects — survivable on a 4 GB Pi but wasteful and fragile as Scryfall grows.
+Inflates the gzip stream and parses one line at a time with stdlib `json`. Peak memory is a single card rather than the ~140 MB export, which matters on a 4 GB Pi that is also running a browser.
+
+*(This originally specified streaming a JSON array with `ijson`, which was correct until the format change above. JSONL made the dependency unnecessary — each line is independently parseable — so `ijson` was removed.)*
 
 Writes to `data/cards.sqlite.tmp` and atomically renames over the real path on success, so an interrupted or failed ingest never leaves a half-populated database in place.
 
@@ -267,4 +269,4 @@ Slices are implemented in parallel, so each owns a disjoint set of files. Shared
 
 ## Dependencies added
 
-`ijson`, for streaming the bulk export. Downloads use stdlib `urllib.request` rather than adding an HTTP client.
+**None.** `ijson` was planned for streaming the bulk export, but Scryfall's move to gzipped JSONL made stdlib `gzip` + `json` sufficient — one card per line parses independently, which is the property `ijson` was there to provide. Downloads use stdlib `urllib.request` rather than adding an HTTP client.

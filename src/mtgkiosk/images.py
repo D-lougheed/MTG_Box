@@ -62,6 +62,12 @@ def fetch(cache_dir: Path, card_id: str, image_uri: str, timeout: float = 8) -> 
     path = cached_path(cache_dir, card_id)
     if path is None or not image_uri:
         return None
+    # urlopen honours file:// and ftp://. image_uri is the one field in this
+    # system that comes from a third party and then gets dereferenced, so the
+    # scheme is checked rather than trusted.
+    if not image_uri.startswith(("http://", "https://")):
+        logger.info("refusing non-http image uri for %s", card_id)
+        return None
 
     try:
         Path(cache_dir).mkdir(parents=True, exist_ok=True)

@@ -8,3 +8,6 @@ data/
 *.db
 *.sqlite3
 .cache/
+
+# Local editor/agent tooling config
+.claude/

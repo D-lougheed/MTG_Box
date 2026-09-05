@@ -250,25 +250,31 @@ def _layout_body(oracle_text: str, max_width: int, max_height: int) -> tuple[_Fo
 
 
 def _stats(card: Card) -> str:
-    """Bottom-right corner text: power/toughness, or loyalty, or nothing.
+    """Bottom-right corner text: power/toughness pairs, then any loyalty.
 
-    Pairing happens per face, not per field. Jace, Vryn's Prodigy is a 0/2 that
-    transforms into a loyalty-5 planeswalker, so power/toughness/loyalty each
-    carry a face-joined value with a hole in it; flattening the fields
-    separately would print "0 // 2/2" rather than "0/2 // 5".
+    Jace, Vryn's Prodigy is a 0/2 that transforms into a loyalty-5
+    planeswalker and has to print "0/2 // 5".
+
+    These fields cannot be paired by face index, because ingest.py drops a
+    face that has no value for a field rather than leaving a hole: Jace
+    arrives as power="0", toughness="2", loyalty="5", three single-entry
+    lists carrying no record of which face each came from. An earlier version
+    of this function assumed the holes were preserved and silently printed
+    "0/2", dropping the loyalty on all 13 such cards in the export.
+
+    So pairs are emitted in order and loyalties appended after them. That is
+    correct for every real card: all 13 are creature-front, planeswalker-back,
+    and none has a loyalty face ahead of a creature face.
     """
     powers = _faces(card.power)
     toughnesses = _faces(card.toughness)
-    loyalties = _faces(card.loyalty)
     parts = []
-    for index in range(max(len(powers), len(toughnesses), len(loyalties))):
+    for index in range(max(len(powers), len(toughnesses))):
         power = powers[index] if index < len(powers) else ""
         toughness = toughnesses[index] if index < len(toughnesses) else ""
-        loyalty = loyalties[index] if index < len(loyalties) else ""
         if power and toughness:
             parts.append(f"{power}/{toughness}")
-        elif loyalty:
-            parts.append(loyalty)
+    parts.extend(loyalty for loyalty in _faces(card.loyalty) if loyalty)
     return " // ".join(parts)
 
 

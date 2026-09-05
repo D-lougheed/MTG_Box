@@ -1,12 +1,46 @@
 import threading
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 import mtgkiosk.app as app_module
 from mtgkiosk.app import app, get_printer
 from mtgkiosk.printer.device import PrinterError
 from mtgkiosk.wifi import WifiError
+
+
+@pytest.fixture(autouse=True)
+def isolate_ingest_state():
+    """Stop the background ingest's module-level state leaking between tests.
+
+    /api/cards/update mutates a module global from a daemon thread. Without
+    this, a test that starts an ingest leaves running/stage/done set for
+    everything after it, and the next POST can land before the previous
+    thread has released the flag - taking a 409, starting no thread, and
+    failing for reasons unrelated to what it was testing.
+
+    The wait happens on the way *in* rather than on the way out, because
+    monkeypatch tears down before an autouse fixture does: waiting on exit
+    would race the restoration of the very globals the thread is reading.
+    """
+    _wait_for_idle_ingest()
+    _reset_ingest_state()
+    yield
+    _wait_for_idle_ingest()
+    _reset_ingest_state()
+
+
+def _wait_for_idle_ingest(timeout: float = 5) -> None:
+    deadline = time.monotonic() + timeout
+    while app_module._ingest_state["running"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def _reset_ingest_state() -> None:
+    app_module._ingest_state.update(
+        running=False, stage="", done=0, total=None, error=None
+    )
 
 
 class FakePrinter:
@@ -337,3 +371,23 @@ def test_cards_update_records_failure_instead_of_stranding_the_running_flag(tmp_
         time.sleep(0.05)
     assert body["updating"] is False
     assert "scryfall unreachable" in body["error"]
+
+
+def test_cards_update_does_not_strand_the_running_flag_if_the_thread_cannot_start(monkeypatch):
+    """A failed Thread.start() must not leave Settings stuck on "updating".
+
+    running=True is committed before the thread exists, so if start() raises
+    there is nothing left to clear it: the status endpoint would report an
+    update forever and every retry would 409, recoverable only by restarting
+    the service.
+    """
+    def refuse_to_start(*args, **kwargs):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(app_module.threading, "Thread", refuse_to_start)
+    client = TestClient(app_module.app)
+    assert client.post("/api/cards/update").status_code == 503
+
+    body = client.get("/api/cards/status").json()
+    assert body["updating"] is False
+    assert "can't start new thread" in body["error"]

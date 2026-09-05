@@ -247,7 +247,16 @@ def post_cards_update() -> dict:
         if _ingest_state["running"]:
             raise HTTPException(status_code=409, detail="an update is already running")
         _ingest_state.update(running=True, stage="starting", done=0, total=None, error=None)
-    threading.Thread(target=_run_ingest, daemon=True).start()
+        try:
+            # Started under the same lock that set running=True. If start()
+            # raises there is no thread to clear the flag, so Settings would
+            # show "updating..." forever and every later attempt would 409 -
+            # exactly the stranding _run_ingest's own error handling exists
+            # to prevent, reachable through the one window it can't cover.
+            threading.Thread(target=_run_ingest, daemon=True).start()
+        except RuntimeError as e:
+            _ingest_state.update(running=False, stage="failed", error=str(e))
+            raise HTTPException(status_code=503, detail="couldn't start the update") from e
     return {"started": True}
 
 

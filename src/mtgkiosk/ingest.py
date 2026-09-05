@@ -24,13 +24,13 @@ import logging
 import os
 import sqlite3
 import sys
+import time
 import urllib.error
 import urllib.request
 from contextlib import closing
 from dataclasses import fields
 from pathlib import Path
 from typing import BinaryIO, Callable
-
 
 from . import cards
 
@@ -115,6 +115,21 @@ def _ignore_progress(stage: str, done: int, total: int | None) -> None:
     pass
 
 
+def _is_excluded(card: dict) -> bool:
+    """Whether this entry is something other than a playable card.
+
+    Layout catches almost all of it, but not quite: the Role tokens from
+    Wilds of Eldraine ("Monster // Virtuous", "Royal // Young Hero") are
+    layout "flip", the same layout as real flip cards, and only their type
+    line gives them away. Five rows out of ~34.6k, but they surface next to
+    real cards when someone searches "Monster" or "Royal".
+    """
+    if card.get("layout") in EXCLUDED_LAYOUTS:
+        return True
+    type_line = card.get("type_line")
+    return isinstance(type_line, str) and type_line.startswith("Token ")
+
+
 def _open_url(url: str, timeout: float):
     request = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -144,13 +159,13 @@ def bulk_download_uri(timeout: float = BULK_DATA_TIMEOUT) -> str:
     entries = payload.get("data") if isinstance(payload, dict) else None
     for entry in entries or []:
         if isinstance(entry, dict) and entry.get("type") == BULK_TYPE:
-            # Scryfall serves gzipped JSONL and advertises it as
-            # jsonl_download_uri. `download_uri` is checked as a fallback
-            # because it is what the index used to expose, for a single
-            # pretty-printed JSON array; if it ever comes back, its bytes are
-            # still newline-free per record and would fail loudly at parse
-            # rather than silently importing nothing.
-            uri = entry.get("jsonl_download_uri") or entry.get("download_uri")
+            # Only the JSONL export. The index used to expose `download_uri`
+            # for a single pretty-printed JSON array, and falling back to it
+            # would be worse than useless: ingest() gunzips unconditionally,
+            # so an uncompressed array would fail inside gzip with a message
+            # about the archive rather than about the format having changed.
+            # Failing here instead names the actual problem.
+            uri = entry.get("jsonl_download_uri")
             if uri:
                 return str(uri)
             break
@@ -320,7 +335,7 @@ def _load_cards(conn: sqlite3.Connection, stream: BinaryIO, report: ProgressCall
         if not isinstance(card, dict):
             logger.warning("skipped a non-object entry on line %d", lineno)
             continue
-        if card.get("layout") in EXCLUDED_LAYOUTS:
+        if _is_excluded(card):
             excluded += 1
             continue
         row = card_row(card)
@@ -342,6 +357,32 @@ def _load_cards(conn: sqlite3.Connection, stream: BinaryIO, report: ProgressCall
     # Counted off the table rather than the loop: OR REPLACE collapses any
     # duplicate oracle_id, so the row count is the only honest answer.
     return conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+
+
+def _replace_database(tmp_path: Path, db_path: Path, attempts: int = 10) -> None:
+    """Move the freshly-built database into place, retrying on Windows.
+
+    POSIX renames over an open file happily, so the appliance never needs this.
+    Windows refuses while *any* process holds a handle - and the design
+    guarantees one will: the UI polls /api/cards/status throughout the ingest,
+    and each poll opens the database to count rows. The rename then fails with
+    "Access is denied" and discards a multi-minute download, reported to the
+    user as a generic failure that reads like a network problem. Observed for
+    real on the dev machine with the preview server running.
+
+    The readers are short-lived, so a brief retry closes the window rather than
+    coordinating locks across a request handler and a background thread.
+    """
+    delay = 0.05
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp_path, db_path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 1.0)
 
 
 def ingest_stream(
@@ -366,10 +407,7 @@ def ingest_stream(
     try:
         with closing(_open_temp_database(tmp_path)) as conn:
             written = _load_cards(conn, stream, report)
-        # The connection is closed by this point on purpose: Windows refuses
-        # to replace a file that still has an open handle, and the dev machine
-        # is Windows even though the appliance is not.
-        os.replace(tmp_path, db_path)
+        _replace_database(tmp_path, db_path)
         succeeded = True
     except IngestError:
         raise

@@ -1,14 +1,19 @@
 """Horde-mode deck generation.
 
 Traditional Horde Magic is played against a deck of *token* creatures, revealing
-cards until a non-token appears. Scryfall's Oracle Cards export contains no
-tokens, and switching to an export that does would mean a much larger download
-and a noisier database for every other feature, so this implementation keeps the
-shape of the format and drops the token dependency: the horde deck is many
-copies of real creature cards sharing one creature subtype, and it reveals a
-fixed number of cards per turn instead of "until a non-token" (a rule with no
-stopping condition once tokens are gone). That divergence is a decided design
-position in the Slice 5 spec, not a gap to be closed here.
+cards until a non-token appears. Scryfall's Oracle Cards export does carry
+tokens - about 990 of them - but ingest.py excludes them along with art series,
+emblems, schemes and planes, because they share names with real cards and mostly
+have no rules text, which made card lookup ambiguous and the random roller
+unreliable. That exclusion is worth more to the other three features than
+token-based decks are worth to this one.
+
+So this implementation keeps the shape of the format and drops the token
+dependency by choice: the horde deck is many copies of real creature cards
+sharing one creature subtype, and it reveals a fixed number of cards per turn
+instead of "until a non-token" (a rule with no stopping condition once tokens
+are gone). That divergence is a decided position in the Slice 5 spec, not a gap
+to be closed here.
 
 Only deck generation lives in Python. The game loop is client-side and the
 server holds no session, so a backend restart mid-game cannot lose a game.
@@ -41,13 +46,13 @@ DIFFICULTIES = {
 # the UI can never offer a subtype that build_deck() would then reject.
 MINIMUM_POOL = 40
 
-# Known limitation: creatures_by_subtype() orders by name *before* truncating,
-# so for a subtype with more creatures than this the pool is the
-# alphabetically-first slice rather than a random one - a Human horde skews
-# toward names starting with A. Accepted: 500 distinct creatures is already far
-# more variety than an 80-card deck can show, and the alternative (loading every
-# Human in the database to shuffle it) costs real memory on the Pi for a
-# difference no player would notice.
+# 13 subtypes on the real database exceed this, so the pool genuinely is
+# truncated for the popular tribes. creatures_by_subtype() orders by id (a
+# UUID) precisely so that truncation samples the pool rather than biasing it -
+# it used to order by name, which made a Human horde entirely cards beginning
+# with "A". 500 distinct creatures is already far more variety than an 80-card
+# deck can show, and loading every Human into memory to shuffle would cost real
+# memory on the Pi for a difference no player would notice.
 POOL_LIMIT = 500
 
 

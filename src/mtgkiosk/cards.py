@@ -14,6 +14,7 @@ pooling would be premature.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -92,23 +93,37 @@ def _row_to_card(row: sqlite3.Row) -> Card:
     return Card(**{key: row[key] for key in row.keys()})
 
 
+def _escape_like(term: str) -> str:
+    """Neutralise LIKE's wildcards so a search term matches literally."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def is_available(db_path: Path) -> bool:
     """True when the database exists, has the schema, and holds at least one card."""
     return count(db_path) > 0
 
 
 def count(db_path: Path) -> int:
-    """Number of cards, or 0 for any reason the database can't be read.
+    """Number of cards, or 0 for any reason the database can't be used.
 
     Deliberately swallows errors: a missing or half-written database is a
     normal state on a fresh install, and the caller's job is to offer a
     download, not to surface a stack trace.
+
+    Probes the real column list rather than just COUNT(*), because a `cards`
+    table with the wrong columns answers COUNT(*) perfectly happily and then
+    makes every actual query raise. Without this probe the status endpoint
+    reports a healthy database and the horde tribe list populates, and then
+    the feature 500s the moment someone taps it - with no signal telling the
+    UI to offer a rebuild. Any future column added to SCHEMA puts every
+    already-deployed Pi in exactly that state until it refreshes.
     """
     path = Path(db_path)
     if not path.exists():
         return 0
     try:
-        with _connect(path) as conn:
+        with closing(_connect(path)) as conn:
+            conn.execute(f"SELECT {_COLUMNS} FROM cards LIMIT 1").fetchone()
             return conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     except sqlite3.Error:
         return 0
@@ -123,7 +138,7 @@ def _require(db_path: Path) -> Path:
 
 def random_card(db_path: Path) -> Card:
     path = _require(db_path)
-    with _connect(path) as conn:
+    with closing(_connect(path)) as conn:
         row = conn.execute(
             f"SELECT {_COLUMNS} FROM cards ORDER BY RANDOM() LIMIT 1"
         ).fetchone()
@@ -136,7 +151,7 @@ def get(db_path: Path, card_id: str) -> Card | None:
     path = Path(db_path)
     if not is_available(path):
         return None
-    with _connect(path) as conn:
+    with closing(_connect(path)) as conn:
         row = conn.execute(
             f"SELECT {_COLUMNS} FROM cards WHERE id = ?", (card_id,)
         ).fetchone()
@@ -155,10 +170,9 @@ def search(db_path: Path, query: str, limit: int = 25) -> list[Card]:
     path = Path(db_path)
     if not is_available(path):
         return []
-    # LIKE is case-insensitive for ASCII in SQLite by default. Escape the
-    # wildcards so a card name containing % or _ searches literally.
-    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    with _connect(path) as conn:
+    # LIKE is case-insensitive for ASCII in SQLite by default.
+    escaped = _escape_like(term)
+    with closing(_connect(path)) as conn:
         # The rank expression stays in ORDER BY rather than the select list:
         # every selected column is fed straight into Card(), so an extra one
         # would have to be filtered back out again.
@@ -199,18 +213,25 @@ def creatures_by_subtype(db_path: Path, subtype: str, limit: int = 500) -> list[
     path = Path(db_path)
     if not is_available(path):
         return []
-    with _connect(path) as conn:
+    # Escaped like search() does. The subtype arrives from a request body, and
+    # while the value is bound rather than interpolated, an unescaped "%" is
+    # still a wildcard to LIKE - it returned a 60-card "deck" spanning every
+    # tribe in Magic, reported back as subtype "%".
+    escaped = _escape_like(name)
+    with closing(_connect(path)) as conn:
         rows = conn.execute(
             f"""
             SELECT {_COLUMNS} FROM cards
             WHERE type_line LIKE '%Creature%'
               AND (
-                  type_line LIKE ? OR type_line LIKE ? OR type_line = ?
+                  type_line LIKE ? ESCAPE '\\'
+                  OR type_line LIKE ? ESCAPE '\\'
+                  OR type_line = ?
               )
             ORDER BY id
             LIMIT ?
             """,
-            (f"% {name} %", f"% {name}", name, limit),
+            (f"% {escaped} %", f"% {escaped}", name, limit),
         ).fetchall()
     return [_row_to_card(row) for row in rows]
 
@@ -226,16 +247,23 @@ def subtypes_with_counts(db_path: Path, minimum: int = 40) -> list[tuple[str, in
     if not is_available(path):
         return []
     counts: dict[str, int] = {}
-    with _connect(path) as conn:
+    with closing(_connect(path)) as conn:
         rows = conn.execute(
             "SELECT type_line FROM cards WHERE type_line LIKE '%Creature%'"
         ).fetchall()
     for row in rows:
         type_line = row["type_line"] or ""
-        # Only the first face of a multi-face type line, and only the portion
-        # after the em dash, which is where subtypes live.
+        # The first face only, and only the portion after the em dash, which is
+        # where subtypes live.
+        #
+        # That face must itself be a creature. The SQL matches any card whose
+        # *whole* type line mentions Creature, which for a transforming Saga -
+        # "Enchantment — Saga // Enchantment Creature — Human Monk" - harvested
+        # "Saga" as a creature subtype. There are 50 of those, over the
+        # threshold, so "Saga" was offered as a horde tribe and built a deck
+        # more than half of which wasn't a creature on the visible face.
         first_face = type_line.split("//")[0]
-        if "—" not in first_face:
+        if "Creature" not in first_face or "—" not in first_face:
             continue
         for token in first_face.split("—", 1)[1].split():
             counts[token] = counts.get(token, 0) + 1

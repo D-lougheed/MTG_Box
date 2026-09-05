@@ -11,6 +11,34 @@ const VIEW_HOOKS = {
   "horde-mode": "onHordeShown",
 };
 
+// The matching teardown hook, run on the view being left. A feature can own
+// state that outlives its own screen - a press-and-hold repeat timer, an
+// in-flight fetch that will touch the shared on-screen keyboard - and only the
+// shell knows when the view goes away. Both have caused real bugs: a horde
+// repeat timer kept draining life into the *next* game, and a slow lookup
+// response reopened the keyboard on top of the life counter, burying six of
+// its thirteen controls with no way out.
+const VIEW_HIDDEN_HOOKS = {
+  "life-counter": "onLifeCounterHidden",
+  "random-card": "onRandomCardHidden",
+  "card-lookup": "onCardLookupHidden",
+  "horde-mode": "onHordeHidden",
+};
+
+let currentView = "menu";
+
+function callViewHook(hookName) {
+  if (!hookName || typeof window[hookName] !== "function") return;
+  try {
+    // Only guards synchronous throws. A hook that returns a promise is on its
+    // own after the first await, so hooks must not rely on this to swallow
+    // async failures.
+    window[hookName]();
+  } catch (err) {
+    console.error(`${hookName} failed`, err);
+  }
+}
+
 // The dice button is fixed bottom-right, which on the game screens sits over a
 // real control - the corner player's +1 zone in the life counter, the right end
 // of horde mode's Horde turn button, the loyalty badge on a looked-up card.
@@ -28,19 +56,22 @@ function showView(name) {
     console.error(`No view for "${name}"`);
     return;
   }
+  const leaving = currentView;
   hideKeyboard();
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   target.classList.remove("hidden");
   document.getElementById("random-card-fab").classList.toggle("hidden", FAB_HIDDEN_VIEWS.has(name));
+  currentView = name;
 
-  const hook = VIEW_HOOKS[name];
-  if (hook && typeof window[hook] === "function") {
-    try {
-      window[hook]();
-    } catch (err) {
-      console.error(`${hook} failed`, err);
-    }
-  }
+  // Teardown before setup, so a feature can't cancel work the incoming view
+  // just started.
+  if (leaving !== name) callViewHook(VIEW_HIDDEN_HOOKS[leaving]);
+  callViewHook(VIEW_HOOKS[name]);
+}
+
+function isViewVisible(name) {
+  const view = document.getElementById(`view-${name}`);
+  return Boolean(view) && !view.classList.contains("hidden");
 }
 
 function onSettingsShown() {
