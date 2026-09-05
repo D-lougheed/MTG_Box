@@ -116,6 +116,16 @@ document.getElementById("update-apply-button").addEventListener("click", async (
 });
 
 let wifiSelectedNetwork = null;
+let wifiManualToken = 0;
+
+// Both password rows are reused across selections, so the masked state and the
+// toggle's label have to be reset every time a row is freshly shown. Without
+// this, tapping "Hide" once leaves every subsequent network's password field
+// masked, contradicting the design decision that it defaults to visible.
+function resetPasswordVisibility(input, toggle) {
+  input.type = "text";
+  toggle.textContent = "Hide";
+}
 
 document.getElementById("wifi-settings-button").addEventListener("click", () => {
   showView("wifi");
@@ -125,7 +135,10 @@ document.getElementById("wifi-settings-button").addEventListener("click", () => 
 async function loadWifiNetworks() {
   const statusEl = document.getElementById("wifi-scan-status");
   const listEl = document.getElementById("wifi-network-list");
+  wifiSelectedNetwork = null;
+  wifiManualToken += 1;
   document.getElementById("wifi-connect-form").classList.add("hidden");
+  document.getElementById("wifi-manual-form").classList.add("hidden");
   document.getElementById("wifi-connect-status").textContent = "";
   hideKeyboard();
   statusEl.textContent = "Scanning…";
@@ -157,6 +170,8 @@ async function loadWifiNetworks() {
 
 function selectWifiNetwork(network) {
   wifiSelectedNetwork = network;
+  wifiManualToken += 1;
+  document.getElementById("wifi-manual-form").classList.add("hidden");
   document.getElementById("wifi-connect-button").disabled = false;
   document.getElementById("wifi-selected-ssid").textContent = network.ssid;
   document.getElementById("wifi-connect-form").classList.remove("hidden");
@@ -164,6 +179,7 @@ function selectWifiNetwork(network) {
   const passwordRow = document.getElementById("wifi-password-row");
   const passwordInput = document.getElementById("wifi-password-input");
   passwordInput.value = "";
+  resetPasswordVisibility(passwordInput, document.getElementById("wifi-password-toggle"));
   if (network.secured) {
     passwordRow.classList.remove("hidden");
     showKeyboardFor(passwordInput);
@@ -210,6 +226,7 @@ document.getElementById("wifi-connect-button").addEventListener("click", async (
       hideKeyboard();
     } else {
       const data = await response.json().catch(() => ({}));
+      if (wifiSelectedNetwork !== network) return;
       statusEl.textContent = firstLine(data.detail || "Couldn't connect. Check the password and try again.");
     }
   } catch (err) {
@@ -217,5 +234,90 @@ document.getElementById("wifi-connect-button").addEventListener("click", async (
     statusEl.textContent = "Couldn't connect: " + firstLine(err.message);
   } finally {
     if (wifiSelectedNetwork === network) button.disabled = false;
+  }
+});
+
+document.getElementById("wifi-manual-button").addEventListener("click", () => {
+  wifiSelectedNetwork = null;
+  wifiManualToken += 1;
+  document.getElementById("wifi-connect-form").classList.add("hidden");
+  document.getElementById("wifi-connect-status").textContent = "";
+  const ssidInput = document.getElementById("wifi-manual-ssid-input");
+  const securedCheckbox = document.getElementById("wifi-manual-secured-checkbox");
+  const passwordInput = document.getElementById("wifi-manual-password-input");
+  ssidInput.value = "";
+  securedCheckbox.checked = false;
+  passwordInput.value = "";
+  resetPasswordVisibility(passwordInput, document.getElementById("wifi-manual-password-toggle"));
+  document.getElementById("wifi-manual-password-row").classList.add("hidden");
+  document.getElementById("wifi-manual-connect-button").disabled = true;
+  document.getElementById("wifi-manual-form").classList.remove("hidden");
+  showKeyboardFor(ssidInput);
+});
+
+document.getElementById("wifi-manual-ssid-input").addEventListener("input", (event) => {
+  document.getElementById("wifi-manual-connect-button").disabled = event.currentTarget.value.trim().length === 0;
+});
+
+document.getElementById("wifi-manual-secured-checkbox").addEventListener("change", (event) => {
+  const passwordRow = document.getElementById("wifi-manual-password-row");
+  const passwordInput = document.getElementById("wifi-manual-password-input");
+  passwordInput.value = "";
+  resetPasswordVisibility(passwordInput, document.getElementById("wifi-manual-password-toggle"));
+  if (event.currentTarget.checked) {
+    passwordRow.classList.remove("hidden");
+    showKeyboardFor(passwordInput);
+  } else {
+    passwordRow.classList.add("hidden");
+    showKeyboardFor(document.getElementById("wifi-manual-ssid-input"));
+  }
+});
+
+document.getElementById("wifi-manual-password-toggle").addEventListener("click", (event) => {
+  const input = document.getElementById("wifi-manual-password-input");
+  const masked = input.type === "password";
+  input.type = masked ? "text" : "password";
+  event.currentTarget.textContent = masked ? "Hide" : "Show";
+});
+
+document.getElementById("wifi-manual-cancel-button").addEventListener("click", () => {
+  wifiManualToken += 1;
+  document.getElementById("wifi-manual-form").classList.add("hidden");
+  document.getElementById("wifi-connect-status").textContent = "";
+  hideKeyboard();
+});
+
+document.getElementById("wifi-manual-connect-button").addEventListener("click", async (event) => {
+  const token = wifiManualToken;
+  const button = event.currentTarget;
+  const statusEl = document.getElementById("wifi-connect-status");
+  const ssidInput = document.getElementById("wifi-manual-ssid-input");
+  const securedCheckbox = document.getElementById("wifi-manual-secured-checkbox");
+  const passwordInput = document.getElementById("wifi-manual-password-input");
+  const ssid = ssidInput.value.trim();
+  if (!ssid) return;
+  const password = securedCheckbox.checked ? passwordInput.value : null;
+  button.disabled = true;
+  statusEl.textContent = "Connecting…";
+  try {
+    const response = await fetch("/api/wifi/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ssid, password }),
+    });
+    if (wifiManualToken !== token) return;
+    if (response.ok) {
+      statusEl.textContent = "Connected!";
+      hideKeyboard();
+    } else {
+      const data = await response.json().catch(() => ({}));
+      if (wifiManualToken !== token) return;
+      statusEl.textContent = firstLine(data.detail || "Couldn't connect. Check the details and try again.");
+    }
+  } catch (err) {
+    if (wifiManualToken !== token) return;
+    statusEl.textContent = "Couldn't connect: " + firstLine(err.message);
+  } finally {
+    if (wifiManualToken === token) button.disabled = false;
   }
 });

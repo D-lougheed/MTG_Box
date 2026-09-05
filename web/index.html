@@ -81,6 +81,8 @@
       <p id="wifi-scan-status"></p>
       <div id="wifi-network-list" class="wifi-network-list"></div>
 
+      <button id="wifi-manual-button">Connect to a different network</button>
+
       <div id="wifi-connect-form" class="hidden">
         <p id="wifi-selected-ssid"></p>
         <div id="wifi-password-row" class="hidden">
@@ -90,6 +92,23 @@
         <button id="wifi-connect-button">Connect</button>
         <button id="wifi-cancel-button">Cancel</button>
       </div>
+
+      <div id="wifi-manual-form" class="hidden">
+        <div id="wifi-manual-ssid-row">
+          <input type="text" id="wifi-manual-ssid-input" placeholder="Network name">
+        </div>
+        <label class="wifi-secured-toggle">
+          <input type="checkbox" id="wifi-manual-secured-checkbox">
+          Secured network (needs a password)
+        </label>
+        <div id="wifi-manual-password-row" class="hidden">
+          <input type="text" id="wifi-manual-password-input" placeholder="Password">
+          <button type="button" id="wifi-manual-password-toggle">Hide</button>
+        </div>
+        <button id="wifi-manual-connect-button" disabled>Connect</button>
+        <button id="wifi-manual-cancel-button">Cancel</button>
+      </div>
+
       <p id="wifi-connect-status"></p>
     </div>
 

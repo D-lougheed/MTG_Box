@@ -57,11 +57,16 @@ function handleKeyboardKey(key) {
 
 function showKeyboardFor(inputEl) {
   keyboardTarget = inputEl;
+  document.body.classList.add("keyboard-open");
   document.getElementById("onscreen-keyboard").classList.remove("hidden");
+  requestAnimationFrame(() => {
+    inputEl.scrollIntoView({ block: "center" });
+  });
 }
 
 function hideKeyboard() {
   keyboardTarget = null;
+  document.body.classList.remove("keyboard-open");
   document.getElementById("onscreen-keyboard").classList.add("hidden");
 }
 

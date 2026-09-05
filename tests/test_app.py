@@ -19,6 +19,12 @@ class FakePrinter:
             raise PrinterError("no printer")
 
 
+def test_static_response_has_no_cache_header():
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.headers.get("cache-control") == "no-cache"
+
+
 def test_status_reports_printer_connected():
     app.dependency_overrides[get_printer] = lambda: FakePrinter(connected=True)
     client = TestClient(app)

@@ -32,6 +32,18 @@ WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 app = FastAPI()
 
 
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    # Chromium's on-disk cache survives a kiosk-UI restart (it lives in
+    # --user-data-dir, not memory) - without this, a self-update can leave
+    # the browser silently running old JS/CSS against new backend code.
+    # StaticFiles already handles conditional requests (ETag/Last-Modified),
+    # so "no-cache" just forces revalidation rather than a full re-download.
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Strips only the "input" key (the raw submitted value) - added after a

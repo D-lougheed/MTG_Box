@@ -85,3 +85,64 @@ Same governing principle as the rest of Slice 1: a wifi problem must never take 
 ## Testing
 
 `wifi.py`'s `scan()` parsing/dedup logic and `connect()`'s argument construction and error translation get unit tests with a mocked `subprocess.run`, following `updater.py`'s existing test pattern — no real wifi hardware needed for this layer. The view and keyboard component are verified manually against the running app, consistent with how `web/` has been tested throughout this project; the implementation plan's manual-verification checklist must include an actual connect attempt against real hardware, since the `netdev`-group permission theory in Background is confirmed for *scanning* only, not yet for *connecting*.
+
+---
+
+## Addendum — 2026-09-05: manual network entry, keyboard overlap, asset caching
+
+Three follow-on changes, recorded here because a code review found the first one
+had already silently violated the "password field defaults to visible" decision
+above, precisely because there was no written record of the increment.
+
+### Connect to a network that isn't in the scan list
+
+The scan-and-tap flow can't reach a hidden SSID, or one that simply isn't
+broadcasting at that moment. A "Connect to a different network" button opens a
+second form with a free-text SSID field, a "secured network" checkbox, and the
+same password row.
+
+No backend change was needed: `POST /api/wifi/connect` already accepted an
+arbitrary SSID string and never validated it against the scan results.
+
+The two forms are kept **separate rather than unified into one mode-switching
+form**. Overloading the existing form would have meant threading a mode flag
+through `selectWifiNetwork` and the connect handler — code that had already
+been through four review rounds and had subtle stale-response bugs fixed in it.
+A parallel form duplicates a password toggle and a connect handler, which is the
+cheaper trade against regressing a hardened path.
+
+Because there is no "currently selected network" object for freeform entry, the
+manual form's stale-response guard uses an **incrementing token** captured before
+the fetch and re-checked after each `await`, rather than the scanned flow's
+object-identity comparison. Opening either form invalidates the other.
+
+### The keyboard was covering the controls beneath it
+
+The on-screen keyboard is a `position: fixed` overlay. At the touch-friendly key
+height it occupies roughly 252px of the 480px screen, which put it directly on
+top of the secured checkbox and the Connect/Cancel buttons — and the containing
+`.settings-scroll` had no overflow, so there was no scroll room to move them
+clear. They were invisible and untappable.
+
+Fixed by adding `padding-bottom: 280px` to `.settings-scroll` **only while
+`body.keyboard-open`**, which creates that scroll room, plus scrolling the
+focused input into view when the keyboard opens. 280px is the keyboard's 256px
+measured height (5 rows x 44px, plus row margins and container padding) with a
+little clearance.
+
+This is latent in any future view that shows the keyboard, so the rule is keyed
+off a body class rather than anything wifi-specific.
+
+### Static assets could go stale across a self-update
+
+`StaticFiles` sends no cache-control header, so browsers fall back to heuristic
+caching — which was observed serving a stale `keyboard.js` through a full page
+reload during testing. On the Pi this matters more than it looks: restarting
+`mtgkiosk.service` cascades (via `PartOf=`) into restarting the Chromium UI, but
+Chromium's disk cache lives in a persistent `--user-data-dir` and survives that,
+so a self-update could leave old JS running against a new backend.
+
+Every response now carries `Cache-Control: no-cache`. Deliberately `no-cache`
+and not `no-store`: `StaticFiles` already handles conditional requests via
+ETag/Last-Modified, so this forces revalidation while still allowing 304s,
+rather than forcing a full re-download of every asset on every load.
