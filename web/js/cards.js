@@ -170,6 +170,36 @@
     return panel;
   }
 
+  /* A missing image is the normal offline case, not a failure: the endpoint
+     404s when it can't reach Scryfall, so both "no image known" and "couldn't
+     fetch it" land on the same quiet placeholder.
+
+     isStale() is checked in both handlers for the same reason printCard takes
+     one - a slow image must not repaint a column the caller has already
+     rebuilt for a different card. */
+  function imageColumn(card, isStale) {
+    const column = make("div", "card-image");
+    const placeholder = make("div", "card-image-placeholder", card.has_image ? "Loading image…" : "No image");
+    column.appendChild(placeholder);
+    if (!card.has_image) return column;
+
+    const image = make("img", "card-image-photo");
+    image.alt = "";
+    image.addEventListener("load", () => {
+      if (isStale()) return;
+      placeholder.classList.add("hidden");
+      image.classList.add("is-loaded");
+    });
+    image.addEventListener("error", () => {
+      if (isStale()) return;
+      image.remove();
+      placeholder.textContent = "No image";
+    });
+    image.src = "/api/cards/" + encodeURIComponent(card.id) + "/image";
+    column.appendChild(image);
+    return column;
+  }
+
   // ------------------------------------------------------------ shared plumbing
 
   async function fetchCardsStatus() {
@@ -353,7 +383,10 @@
       }
       const card = await response.json();
       if (randomToken !== token) return;
+      // Picture and text are swapped in one synchronous block, so there is no
+      // frame where the last card's art sits beside this card's rules.
       randomSlot.innerHTML = "";
+      randomSlot.appendChild(imageColumn(card, () => randomToken !== token));
       randomSlot.appendChild(cardPanel(card, false));
       randomCardId = card.id;
       randomPrintButton.disabled = false;
@@ -506,40 +539,15 @@
     lookupNotice.show(description);
   }
 
-  /* A missing image is the normal offline case, not a failure: the endpoint
-     404s when it can't reach Scryfall, so both "no image known" and "couldn't
-     fetch it" land on the same quiet placeholder. */
-  function imageColumn(card, token) {
-    const column = make("div", "card-image");
-    const placeholder = make("div", "card-image-placeholder", card.has_image ? "Loading image…" : "No image");
-    column.appendChild(placeholder);
-    if (!card.has_image) return column;
-
-    const image = make("img", "card-image-photo");
-    image.alt = "";
-    image.addEventListener("load", () => {
-      if (detailToken !== token) return;
-      placeholder.classList.add("hidden");
-      image.classList.add("is-loaded");
-    });
-    image.addEventListener("error", () => {
-      if (detailToken !== token) return;
-      image.remove();
-      placeholder.textContent = "No image";
-    });
-    image.src = "/api/cards/" + encodeURIComponent(card.id) + "/image";
-    column.appendChild(image);
-    return column;
-  }
-
   function openDetail(card) {
     detailToken += 1;
+    const token = detailToken;
     detailCardId = card.id;
     setKeyboardOpen(false);
     setStatus(detailStatus, "", "");
     detailPrintButton.disabled = false;
     detailBody.innerHTML = "";
-    detailBody.appendChild(imageColumn(card, detailToken));
+    detailBody.appendChild(imageColumn(card, () => detailToken !== token));
     detailBody.appendChild(cardPanel(card, true));
     searchPane.classList.add("hidden");
     detailPane.classList.remove("hidden");

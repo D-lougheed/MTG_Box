@@ -85,6 +85,7 @@
   flex: 1;
   min-width: 0;
   display: flex;
+  gap: 16px;
 }
 
 .cards-panel-slot.is-loading {
@@ -285,6 +286,14 @@
 }
 
 /* ------------------------------------------------------------- random card */
+
+/* Same picture column as the lookup detail, sized down: there the panel has the
+   whole 752px row to itself, here 206px of it is already the action buttons, and
+   the rules box is what has to stay readable. */
+#view-random-card .card-image {
+  width: 224px;
+  height: 312px;
+}
 
 .cards-actions {
   flex: none;
