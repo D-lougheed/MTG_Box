@@ -169,6 +169,12 @@ Binds to `127.0.0.1` only. Not reachable from the network.
 
 The self-test label is defined as: a text line reading `MTG KIOSK OK`, the current commit short hash, a timestamp, and a 100 x 100 dot solid black square. The square exercises the `BITMAP`/raster path, the text exercises the `TEXT` path, so one label proves both code paths end to end.
 
+**This was never built as specified, and it cost us — noted 2026-09-05.** `device.self_test()` sends the printer's own `SELFTEST` command instead, which prints the manufacturer's diagnostic label and exercises none of our code. So nothing ever put our `BITMAP` output on paper until the first card label was printed in Slice 2, and it came out as a solid black rectangle with the text knocked out in white: `raster.py` packed a 1 bit for ink, where TSPL2 prints a dot on **0**. A 100x100 black square would have shown that instantly as a white square in a black field.
+
+The same omission hid a second defect. Rows pad to a byte boundary, and the padding bits were 0 — ink. At 609 dots a row pads to 616, so seven columns down the right edge of every label would have printed black. Invisible while the whole label was black; obvious the moment the polarity was fixed.
+
+Both are fixed, and `raster.py`'s docstring now states the convention explicitly. The wider lesson is the one this spec already argued for and the implementation quietly dropped: **a self-test has to exercise our code, not the device's.**
+
 **Status polling:** the UI polls `GET /api/status` every 5 seconds and re-renders the printer badge from the response. No push channel in this slice; a 5 second lag on noticing an unplugged printer is acceptable and avoids a WebSocket dependency.
 
 **Update:** UI button → `GET /api/update/check` shows result → user confirms → `POST /api/update/apply` → `git pull --ff-only` → reinstall requirements if changed → `systemd-run --on-active=2 systemctl restart mtgkiosk` → HTTP response returns before the process dies → Chromium reconnects on restart.
