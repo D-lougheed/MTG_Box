@@ -358,6 +358,16 @@ document.getElementById("update-apply-button").addEventListener("click", async (
   }
 });
 
+// Drawn rather than written. The padlock emoji (U+1F512) lives in the
+// supplementary plane and needs a colour-emoji font, which Raspberry Pi OS
+// doesn't ship - it rendered as an empty box on the device, same as the game
+// die did. Keep any new glyph below U+2FFF or draw it.
+const LOCK_ICON =
+  '<svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+  '<rect x="5" y="10" width="14" height="10" rx="2" fill="currentColor"/>' +
+  '<path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/>' +
+  "</svg>";
+
 let wifiSelectedNetwork = null;
 let wifiManualToken = 0;
 
@@ -402,7 +412,10 @@ async function loadWifiNetworks() {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "wifi-network-item";
-      item.textContent = (network.secured ? "🔒 " : "") + network.ssid;
+      if (network.secured) item.insertAdjacentHTML("beforeend", LOCK_ICON);
+      // A text node, not innerHTML: the SSID is broadcast by whatever is in
+      // range and is not ours to trust as markup.
+      item.appendChild(document.createTextNode(network.ssid));
       item.addEventListener("click", () => selectWifiNetwork(network));
       listEl.appendChild(item);
     });

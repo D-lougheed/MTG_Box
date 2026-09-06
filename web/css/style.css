@@ -330,3 +330,25 @@ h2 {
   font-size: 14px;
   max-width: 560px;
 }
+
+/* Icons are drawn, not typed. Emoji above U+2FFF need a colour-emoji font that
+   Raspberry Pi OS doesn't ship, so on the device they render as empty boxes -
+   the game die and the wifi padlock both did. currentColor keeps a drawn icon
+   in step with whatever text colour surrounds it. */
+.inline-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  margin-right: 0.4em;
+  flex: none;
+}
+
+#random-card-fab svg {
+  /* 32 of the button's 56px. The button is the touch target; the die only has
+     to be recognisable, and at 133 PPI this is about 6mm across. */
+  width: 32px;
+  height: 32px;
+  color: #1a1a1a;
+  display: block;
+  margin: 0 auto;
+}

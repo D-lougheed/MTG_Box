@@ -141,7 +141,21 @@
     <button class="back-button" data-view="settings">Back</button>
   </main>
 
-  <button id="random-card-fab" title="Random card">🎲</button>
+  <!-- Inline SVG rather than the game-die emoji. That character lives in the
+       supplementary plane and needs a colour-emoji font, which Raspberry Pi OS
+       does not ship - on the device it rendered as an empty box. Drawing it
+       removes the font dependency entirely and stays sharp at any size. -->
+  <button id="random-card-fab" title="Random card" aria-label="Random card">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3" y="3" width="18" height="18" rx="4" fill="none"
+            stroke="currentColor" stroke-width="2"/>
+      <circle cx="8.5" cy="8.5" r="1.6" fill="currentColor"/>
+      <circle cx="15.5" cy="8.5" r="1.6" fill="currentColor"/>
+      <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
+      <circle cx="8.5" cy="15.5" r="1.6" fill="currentColor"/>
+      <circle cx="15.5" cy="15.5" r="1.6" fill="currentColor"/>
+    </svg>
+  </button>
 
   <div id="onscreen-keyboard" class="keyboard hidden"></div>
 
