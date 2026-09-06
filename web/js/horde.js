@@ -23,6 +23,12 @@ const HORDE_DIFFICULTIES = [
 const HORDE_PLAYER_COUNTS = [1, 2, 3, 4];
 const HORDE_STARTING_LIVES = [20, 30, 40];
 
+// Tokens are entered with steppers rather than typed, so the ranges only have
+// to cover what a real token-making card produces. 99 clears anything Magic
+// prints; 20 at once clears the widest army-in-a-can effects.
+const HORDE_TOKEN_MAX_PT = 99;
+const HORDE_TOKEN_MAX_COUNT = 20;
+
 const hordeUi = {};
 const hordeSetupChoice = { subtype: null, difficulty: "normal", players: 2, life: 20 };
 
@@ -31,12 +37,48 @@ let hordeSubtypesState = "idle";
 let hordeUndo = null;
 let hordeStarting = false;
 
+// The open creature panel: { creature, mode, detail }. Held as an object so an
+// in-flight detail fetch can check it is still looking at the same panel, not
+// just the same token.
+let hordeCardPanel = null;
+
+// Bumped by every open, close and mode change. A detail fetch or an image load
+// that resolves after its bump has been left behind and must not paint.
+let hordeDetailToken = 0;
+
+// Card detail is fetched on demand rather than persisted, so the same creature
+// gets looked up repeatedly across a game. Bounded by the deck (80 cards at
+// most) and dropped when the game ends.
+const hordeDetailCache = new Map();
+
+// Remembered between opens: a Zombie horde makes 2/2 Zombies all game, and
+// re-entering the same four values every time is the chore this screen exists
+// to remove. Reset with the game, since the subtype changes with it.
+let hordeTokenDraft = null;
+
 function hordeEl(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined && text !== null) node.textContent = text;
   return node;
 }
+
+// Inline SVG rather than an emoji. The Pi ships no colour-emoji font, so a
+// character above the BMP renders as an empty box on the real device - the
+// same reason index.html draws the dice button rather than using U+1F3B2.
+// The markup is a constant in this file and never carries card or user data.
+function hordeIcon(className, markup) {
+  const node = hordeEl("span", className);
+  node.innerHTML = markup;
+  return node;
+}
+
+const HORDE_ICON_CARD_BOX =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+  '<rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+  '<path d="M7 7V5.5A2.5 2.5 0 0 1 9.5 3h5A2.5 2.5 0 0 1 17 5.5V7" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+  '<path d="M8.5 11.5h7M8.5 15.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+  "</svg>";
 
 function hordeButton(className, text, onClick) {
   const node = hordeEl("button", className, text);
@@ -94,6 +136,26 @@ function hordeSlimCard(card) {
     name: typeof card.name === "string" ? card.name : "Unknown creature",
     power: hordeCardText(card.power),
     toughness: hordeCardText(card.toughness),
+  };
+}
+
+// Player-made tokens share the battlefield with revealed cards, so they carry
+// the same four fields and count towards Horde power through exactly the same
+// code. `tok` is the only thing that separates them, and it is deliberately
+// optional: a game saved before tokens existed has no such field, and must
+// still load rather than being thrown away as a stale shape. That is also why
+// HORDE_STATE_VERSION is unchanged - bumping it would reject those saves.
+function hordeIsToken(creature) {
+  return !!creature && creature.tok === true;
+}
+
+function hordeMakeToken(name, power, toughness) {
+  return {
+    id: "",
+    name: name,
+    power: String(power),
+    toughness: String(toughness),
+    tok: true,
   };
 }
 
@@ -157,8 +219,17 @@ function restoreHordeGame() {
     clearStoredHordeGame();
     return;
   }
-  // "Just revealed" is about the last tap, not the last boot.
-  data.battlefield.forEach((creature) => { creature.neu = false; });
+  // "Just revealed" is about the last tap, not the last boot. `tok` is dropped
+  // rather than validated when it isn't exactly true, so that both a pre-token
+  // save (field absent) and a hand-mangled one (field present but junk) land on
+  // a clean shape instead of costing the player their game. Dropped rather than
+  // set to false so a revealed card never carries the key at all - it would
+  // otherwise cost bytes on every one of the 80 entries, on a write that
+  // happens on every single life tap.
+  data.battlefield.forEach((creature) => {
+    creature.neu = false;
+    if (creature.tok !== true) delete creature.tok;
+  });
   hordeGame = data;
 }
 
@@ -186,7 +257,7 @@ function buildHordeOptionGroup(label, modifier, choices, current, onPick) {
 
 function buildHordeNoDatabase() {
   const box = hordeEl("div", "horde-nodb");
-  box.appendChild(hordeEl("div", "horde-nodb-icon", "🗃"));
+  box.appendChild(hordeIcon("horde-nodb-icon", HORDE_ICON_CARD_BOX));
   box.appendChild(hordeEl("h3", "horde-nodb-title", "No card database yet"));
   box.appendChild(hordeEl("p", "horde-nodb-text",
     "Horde Mode builds its deck from cards stored on this device. Download the card database from Settings, then come back."));
@@ -417,6 +488,9 @@ function buildHordeGameScreen() {
   fieldHead.appendChild(hordeUi.fieldTitle);
   hordeUi.undoButton = hordeButton("horde-undo hidden", "Undo", undoHordeRemoval);
   fieldHead.appendChild(hordeUi.undoButton);
+  // Tokens live on the battlefield, so their control lives on the battlefield's
+  // own header rather than beside the life totals.
+  fieldHead.appendChild(hordeButton("horde-tokens-button", "+ Tokens", openHordeTokenDialog));
   field.appendChild(fieldHead);
   hordeUi.fieldScroll = hordeEl("div", "horde-field-scroll");
   hordeUi.fieldGrid = hordeEl("div", "horde-field-grid");
@@ -534,12 +608,20 @@ function updateHordePlayers() {
   });
 }
 
-function createHordeCreatureTile(creature, index, animate) {
-  const tile = hordeButton("horde-creature", null, () => removeHordeCreature(index));
+// The creature object is closed over rather than its index: the panel resolves
+// the index at the moment an action is taken, so a tile built before a removal
+// can never point at whatever slid into its old slot.
+function createHordeCreatureTile(creature, animate) {
+  const tile = hordeButton("horde-creature", null, () => openHordeCardPanel(creature));
+  const token = hordeIsToken(creature);
+  if (token) tile.classList.add("horde-creature--token");
   if (creature.neu) tile.classList.add("horde-creature--new");
   if (animate) tile.classList.add("horde-creature--reveal");
   tile.appendChild(hordeEl("span", "horde-creature-name", creature.name));
-  tile.appendChild(hordeEl("span", "horde-creature-pt", hordeFormatPT(creature)));
+  const foot = hordeEl("div", "horde-creature-foot");
+  if (token) foot.appendChild(hordeEl("span", "horde-creature-tag", "Token"));
+  foot.appendChild(hordeEl("span", "horde-creature-pt", hordeFormatPT(creature)));
+  tile.appendChild(foot);
   return tile;
 }
 
@@ -549,8 +631,8 @@ function renderHordeBattlefield() {
   // killed something would make the list unusable.
   const offset = hordeUi.fieldScroll.scrollTop;
   hordeUi.fieldGrid.innerHTML = "";
-  hordeGame.battlefield.forEach((creature, index) => {
-    hordeUi.fieldGrid.appendChild(createHordeCreatureTile(creature, index, false));
+  hordeGame.battlefield.forEach((creature) => {
+    hordeUi.fieldGrid.appendChild(createHordeCreatureTile(creature, false));
   });
   hordeUi.fieldEmpty.classList.toggle("hidden", hordeGame.battlefield.length > 0);
   hordeUi.fieldScroll.scrollTop = offset;
@@ -600,13 +682,12 @@ function takeHordeTurn() {
   });
   hordeGame.battlefield.forEach((creature) => { creature.neu = false; });
   const revealed = hordeGame.library.splice(0, hordeGame.cardsPerTurn);
-  const firstIndex = hordeGame.battlefield.length;
-  revealed.forEach((creature, offset) => {
+  revealed.forEach((creature) => {
     creature.neu = true;
     hordeGame.battlefield.push(creature);
     // Appending only the new tiles means the reveal animation plays on those
     // and nothing else flickers.
-    hordeUi.fieldGrid.appendChild(createHordeCreatureTile(creature, firstIndex + offset, true));
+    hordeUi.fieldGrid.appendChild(createHordeCreatureTile(creature, true));
   });
   hordeGame.turn += 1;
   hordeUndo = null;
@@ -657,6 +738,374 @@ function adjustHordeLife(index, delta) {
   updateHordePlayers();
   saveHordeGame();
   checkHordeOutcome();
+}
+
+/* ---------- creature panel: view the card, or remove it ---------- */
+
+// Tapping a creature used to kill it outright. It now opens this panel, because
+// horde creatures carry real abilities that decide the turn and looking them up
+// on a phone mid-game is the errand this device exists to remove. Removal stays
+// two taps, which is still cheap enough for something done constantly, and the
+// one-level undo behind it is unchanged.
+
+function buildHordeCardPanel() {
+  const overlay = hordeEl("div", "horde-modal horde-card-overlay hidden");
+  // The scrim is a dismiss target in its own right: on a screen this size the
+  // panel leaves a wide margin, and tapping beside it is the fastest way out.
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeHordeCardPanel();
+  });
+
+  const panel = hordeEl("div", "horde-card-panel");
+
+  const head = hordeEl("div", "horde-card-head");
+  const heading = hordeEl("div", "horde-card-heading");
+  hordeUi.cardName = hordeEl("h3", "horde-card-name", "");
+  hordeUi.cardSub = hordeEl("div", "horde-card-sub", "");
+  heading.appendChild(hordeUi.cardName);
+  heading.appendChild(hordeUi.cardSub);
+  hordeUi.cardPT = hordeEl("div", "horde-card-pt", "");
+  head.appendChild(heading);
+  head.appendChild(hordeUi.cardPT);
+  panel.appendChild(head);
+
+  hordeUi.cardBody = hordeEl("div", "horde-card-body");
+  hordeUi.cardArt = hordeEl("div", "horde-card-art");
+  hordeUi.cardInfo = hordeEl("div", "horde-card-info");
+  hordeUi.cardBody.appendChild(hordeUi.cardArt);
+  hordeUi.cardBody.appendChild(hordeUi.cardInfo);
+  panel.appendChild(hordeUi.cardBody);
+
+  const actions = hordeEl("div", "horde-card-actions");
+  hordeUi.cardViewButton = hordeButton("horde-card-button", "View card", viewHordeCardDetail);
+  actions.appendChild(hordeUi.cardViewButton);
+  actions.appendChild(hordeButton("horde-card-button horde-card-button--remove", "Remove", removeHordeCardPanelCreature));
+  actions.appendChild(hordeButton("horde-card-button", "Close", closeHordeCardPanel));
+  panel.appendChild(actions);
+
+  overlay.appendChild(panel);
+  hordeUi.cardOverlay = overlay;
+  return overlay;
+}
+
+function openHordeCardPanel(creature) {
+  if (!hordeGame || hordeGame.over) return;
+  hordeDetailToken += 1;
+  hordeCardPanel = { creature: creature, mode: "menu", detail: null };
+  renderHordeCardPanel();
+  hordeUi.cardOverlay.classList.remove("hidden");
+}
+
+function closeHordeCardPanel() {
+  // Bumping on close is what stops a reply that is already on the wire from
+  // painting into a panel nobody is looking at any more.
+  hordeDetailToken += 1;
+  hordeCardPanel = null;
+  if (hordeUi.cardOverlay) hordeUi.cardOverlay.classList.add("hidden");
+}
+
+function viewHordeCardDetail() {
+  if (!hordeCardPanel) return;
+  hordeCardPanel.mode = "detail";
+  renderHordeCardPanel();
+  loadHordeCardDetail(hordeCardPanel);
+}
+
+function removeHordeCardPanelCreature() {
+  if (!hordeGame || !hordeCardPanel) return;
+  // Resolved now rather than when the tile was built, so a battlefield that has
+  // shifted underneath the panel still removes the creature that was tapped.
+  const index = hordeGame.battlefield.indexOf(hordeCardPanel.creature);
+  closeHordeCardPanel();
+  if (index === -1) return;
+  removeHordeCreature(index);
+}
+
+function renderHordeCardPanel() {
+  if (!hordeCardPanel) return;
+  const creature = hordeCardPanel.creature;
+  const token = hordeIsToken(creature);
+  const detail = hordeCardPanel.mode === "detail";
+  hordeUi.cardName.textContent = creature.name;
+  hordeUi.cardSub.textContent = token ? "Token · on the battlefield" : "On the battlefield";
+  hordeUi.cardPT.textContent = hordeFormatPT(creature);
+  // Hiding the body is what turns the panel from a compact action sheet into
+  // the full card view; the panel is a column flexbox, so it collapses to the
+  // header and buttons on its own.
+  hordeUi.cardBody.classList.toggle("hidden", !detail);
+  hordeUi.cardViewButton.classList.toggle("hidden", detail);
+  hordeUi.cardViewButton.textContent = token ? "View" : "View card";
+  if (detail) renderHordeCardDetail();
+}
+
+// A missing image is the normal offline case, not a failure: the endpoint 404s
+// when it has no art cached and can't reach Scryfall, so "no art exists" and
+// "no network" land on the same quiet placeholder rather than a broken image.
+function renderHordeCardArt(card, token) {
+  hordeUi.cardArt.innerHTML = "";
+  const note = hordeEl("div", "horde-card-art-note", card.has_image ? "Loading image…" : "No image");
+  hordeUi.cardArt.appendChild(note);
+  if (!card.has_image || typeof card.id !== "string" || !card.id) return;
+  const image = hordeEl("img", "horde-card-photo");
+  image.alt = "";
+  image.addEventListener("load", () => {
+    if (hordeDetailToken !== token) return;
+    note.classList.add("hidden");
+    image.classList.add("horde-card-photo--on");
+  });
+  image.addEventListener("error", () => {
+    if (hordeDetailToken !== token) return;
+    image.remove();
+    note.textContent = "No image";
+  });
+  image.src = "/api/cards/" + encodeURIComponent(card.id) + "/image";
+  hordeUi.cardArt.appendChild(image);
+}
+
+function renderHordeCardDetail() {
+  const entry = hordeCardPanel;
+  if (!entry) return;
+  const state = entry.detail ? entry.detail.state : "loading";
+  hordeUi.cardInfo.innerHTML = "";
+  hordeUi.cardArt.innerHTML = "";
+
+  if (state === "loading") {
+    hordeUi.cardArt.appendChild(hordeEl("div", "horde-card-art-note", "…"));
+    hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-note", "Reading the card…"));
+    return;
+  }
+
+  // No card id: a player-made token, or a deck entry that arrived without one.
+  // Everything known about it is already on screen, so say so plainly instead
+  // of asking the server about a card that does not exist.
+  if (state === "none") {
+    hordeUi.cardArt.appendChild(hordeEl("div", "horde-card-art-note", "No image"));
+    hordeUi.cardInfo.appendChild(hordeEl("div", "horde-card-type",
+      hordeIsToken(entry.creature) ? "Token creature — " + entry.creature.name : "Creature"));
+    hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-rules",
+      hordeIsToken(entry.creature)
+        ? "A token you put onto the battlefield. It has no rules text of its own and counts towards Horde power like any other creature."
+        : "This creature came without a card id, so there is nothing to look up. Its name and power/toughness are above."));
+    return;
+  }
+
+  if (state === "error") {
+    hordeUi.cardArt.appendChild(hordeEl("div", "horde-card-art-note", "No image"));
+    hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-note", "Couldn't read this card."));
+    if (entry.detail.message) {
+      hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-note horde-card-note--quiet", entry.detail.message));
+    }
+    return;
+  }
+
+  const card = entry.detail.card;
+  renderHordeCardArt(card, entry.detail.token);
+  const typeLine = card.type_line || "Creature";
+  const header = hordeEl("div", "horde-card-typerow");
+  header.appendChild(hordeEl("span", "horde-card-type", typeLine));
+  if (card.mana_cost) header.appendChild(hordeEl("span", "horde-card-cost", card.mana_cost));
+  hordeUi.cardInfo.appendChild(header);
+  const rules = card.oracle_text ? String(card.oracle_text) : "";
+  hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-rules" + (rules ? "" : " horde-card-rules--none"),
+    rules || "No rules text."));
+  const meta = [card.set_name, card.rarity ? hordeCapitalise(card.rarity) : null].filter(Boolean).join(" · ");
+  if (meta) hordeUi.cardInfo.appendChild(hordeEl("p", "horde-card-note horde-card-note--quiet", meta));
+}
+
+// The persisted deck keeps only id/name/power/toughness so the localStorage
+// write on every life tap stays cheap. Rules text is fetched here instead, and
+// /api/cards/{id} is a local SQLite read, so it answers with no network.
+async function loadHordeCardDetail(entry) {
+  const creature = entry.creature;
+  const id = typeof creature.id === "string" ? creature.id : "";
+  if (!id) {
+    entry.detail = { state: "none" };
+    if (hordeCardPanel === entry) renderHordeCardDetail();
+    return;
+  }
+  const token = ++hordeDetailToken;
+  const cached = hordeDetailCache.get(id);
+  if (cached) {
+    entry.detail = { state: "ready", card: cached, token: token };
+    if (hordeCardPanel === entry) renderHordeCardDetail();
+    return;
+  }
+  entry.detail = { state: "loading", token: token };
+  if (hordeCardPanel === entry) renderHordeCardDetail();
+  try {
+    const response = await fetch("/api/cards/" + encodeURIComponent(id));
+    // Two guards, both load-bearing: the token catches a panel that has since
+    // been closed or switched card, and the identity check catches a panel
+    // reopened on the same creature while this was in flight.
+    if (hordeDetailToken !== token || hordeCardPanel !== entry) return;
+    if (!response.ok) {
+      entry.detail = { state: "error", message: "The device answered with HTTP " + response.status + ".", token: token };
+      renderHordeCardDetail();
+      return;
+    }
+    const card = await response.json();
+    if (hordeDetailToken !== token || hordeCardPanel !== entry) return;
+    if (!card || typeof card !== "object") {
+      entry.detail = { state: "error", message: "", token: token };
+      renderHordeCardDetail();
+      return;
+    }
+    hordeDetailCache.set(id, card);
+    entry.detail = { state: "ready", card: card, token: token };
+    renderHordeCardDetail();
+  } catch (err) {
+    if (hordeDetailToken !== token || hordeCardPanel !== entry) return;
+    entry.detail = { state: "error", message: firstLine(err.message), token: token };
+    renderHordeCardDetail();
+  }
+}
+
+/* ---------- tokens ---------- */
+
+// Real cards make tokens - "create two 1/1 white Soldier creature tokens" - and
+// the horde's board has to carry them or the power total is wrong. They are
+// ordinary battlefield entries, so they total, remove and undo through the same
+// code paths as revealed cards.
+
+function hordeTokenDefaults() {
+  return { name: hordeGame ? hordeGame.subtype : "Token", power: 1, toughness: 1, count: 1 };
+}
+
+function buildHordeTokenStepper(label, key, min, max) {
+  const group = hordeEl("div", "horde-token-field");
+  group.appendChild(hordeEl("div", "horde-label", label));
+  const row = hordeEl("div", "horde-token-stepper");
+  const down = hordeButton("horde-token-step", "−", () => adjustHordeTokenValue(key, -1, min, max));
+  const value = hordeEl("div", "horde-token-value", "1");
+  const up = hordeButton("horde-token-step", "+", () => adjustHordeTokenValue(key, 1, min, max));
+  row.appendChild(down);
+  row.appendChild(value);
+  row.appendChild(up);
+  group.appendChild(row);
+  hordeUi.tokenValues[key] = value;
+  return group;
+}
+
+function adjustHordeTokenValue(key, delta, min, max) {
+  if (!hordeTokenDraft) return;
+  hordeTokenDraft[key] = Math.max(min, Math.min(max, hordeTokenDraft[key] + delta));
+  updateHordeTokenDialog();
+}
+
+function buildHordeTokenDialog() {
+  const overlay = hordeEl("div", "horde-modal horde-token-overlay hidden");
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeHordeTokenDialog();
+  });
+
+  const panel = hordeEl("div", "horde-token-panel");
+  panel.appendChild(hordeEl("h3", "horde-token-title", "Add tokens"));
+
+  const nameField = hordeEl("div", "horde-token-field");
+  nameField.appendChild(hordeEl("div", "horde-label", "Name"));
+  const nameRow = hordeEl("div", "horde-token-name-row");
+  hordeUi.tokenName = hordeEl("input", "horde-token-input");
+  hordeUi.tokenName.type = "text";
+  hordeUi.tokenName.setAttribute("autocomplete", "off");
+  hordeUi.tokenName.setAttribute("spellcheck", "false");
+  // There is no hardware keyboard on this device, so the shared on-screen one
+  // is the only way to change the name off the horde's own subtype.
+  hordeUi.tokenName.addEventListener("click", () => setHordeTokenTyping(true));
+  hordeUi.tokenName.addEventListener("input", () => {
+    if (hordeTokenDraft) hordeTokenDraft.name = hordeUi.tokenName.value;
+  });
+  // Only one of the pair is ever on screen; which one is decided in CSS by the
+  // typing class, so neither needs a handle here.
+  nameRow.appendChild(hordeUi.tokenName);
+  nameRow.appendChild(hordeButton("horde-token-keyboard", "Keyboard", () => setHordeTokenTyping(true)));
+  nameRow.appendChild(hordeButton("horde-token-done", "Done", () => setHordeTokenTyping(false)));
+  nameField.appendChild(nameRow);
+  panel.appendChild(nameField);
+
+  hordeUi.tokenValues = {};
+  const numbers = hordeEl("div", "horde-token-numbers");
+  numbers.appendChild(buildHordeTokenStepper("Power", "power", 0, HORDE_TOKEN_MAX_PT));
+  numbers.appendChild(buildHordeTokenStepper("Toughness", "toughness", 0, HORDE_TOKEN_MAX_PT));
+  numbers.appendChild(buildHordeTokenStepper("How many", "count", 1, HORDE_TOKEN_MAX_COUNT));
+  panel.appendChild(numbers);
+
+  const actions = hordeEl("div", "horde-token-actions");
+  actions.appendChild(hordeButton("horde-card-button", "Cancel", closeHordeTokenDialog));
+  hordeUi.tokenAddButton = hordeButton("horde-card-button horde-card-button--primary", "Add", addHordeTokens);
+  actions.appendChild(hordeUi.tokenAddButton);
+  panel.appendChild(actions);
+
+  overlay.appendChild(panel);
+  hordeUi.tokenOverlay = overlay;
+  hordeUi.tokenPanel = panel;
+  return overlay;
+}
+
+function updateHordeTokenDialog() {
+  if (!hordeTokenDraft) return;
+  hordeUi.tokenValues.power.textContent = String(hordeTokenDraft.power);
+  hordeUi.tokenValues.toughness.textContent = String(hordeTokenDraft.toughness);
+  hordeUi.tokenValues.count.textContent = String(hordeTokenDraft.count);
+  hordeUi.tokenAddButton.textContent = hordeTokenDraft.count === 1
+    ? "Add 1 token"
+    : "Add " + hordeTokenDraft.count + " tokens";
+}
+
+// While the on-screen keyboard is up it owns the bottom ~256px of the screen,
+// so the dialog moves to the top and drops to just the name row. The overlay
+// also gives up its z-index for the duration: it is a positioned element and
+// the keyboard is not, so keeping the stacking order would paint the scrim
+// over the keys and make them untappable.
+function setHordeTokenTyping(on) {
+  if (!hordeUi.tokenPanel) return;
+  if (!isViewVisible("horde-mode")) return;
+  hordeUi.tokenOverlay.classList.toggle("horde-modal--typing", on);
+  hordeUi.tokenPanel.classList.toggle("horde-token-panel--typing", on);
+  if (on) {
+    showKeyboardFor(hordeUi.tokenName);
+  } else {
+    hideKeyboard();
+  }
+}
+
+function openHordeTokenDialog() {
+  if (!hordeGame || hordeGame.over) return;
+  closeHordeCardPanel();
+  if (!hordeTokenDraft) hordeTokenDraft = hordeTokenDefaults();
+  hordeUi.tokenName.value = hordeTokenDraft.name;
+  updateHordeTokenDialog();
+  hordeUi.tokenOverlay.classList.remove("hidden");
+  setHordeTokenTyping(false);
+}
+
+function closeHordeTokenDialog() {
+  if (!hordeUi.tokenOverlay) return;
+  setHordeTokenTyping(false);
+  hordeUi.tokenOverlay.classList.add("hidden");
+}
+
+function addHordeTokens() {
+  if (!hordeGame || hordeGame.over || !hordeTokenDraft) return;
+  const name = String(hordeUi.tokenName.value || "").trim() || hordeGame.subtype || "Token";
+  hordeTokenDraft.name = name;
+  const count = Math.max(1, Math.min(HORDE_TOKEN_MAX_COUNT, hordeTokenDraft.count));
+  closeHordeTokenDialog();
+  for (let i = 0; i < count; i += 1) {
+    const token = hordeMakeToken(name, hordeTokenDraft.power, hordeTokenDraft.toughness);
+    token.neu = true;
+    hordeGame.battlefield.push(token);
+    hordeUi.fieldGrid.appendChild(createHordeCreatureTile(token, true));
+  }
+  // Adding is "the next thing that happened", same as a horde turn, so the
+  // pending undo of an earlier removal expires with it.
+  hordeUndo = null;
+  hordeUi.fieldEmpty.classList.add("hidden");
+  updateHordeStats();
+  updateHordeUndo();
+  saveHordeGame();
+  requestAnimationFrame(() => {
+    hordeUi.fieldScroll.scrollTo({ top: hordeUi.fieldScroll.scrollHeight, behavior: "smooth" });
+  });
 }
 
 /* ---------- outcome ---------- */
@@ -712,8 +1161,14 @@ function confirmAbandonHorde() {
 
 function abandonHordeGame() {
   stopAllHordeRepeats();
+  closeHordeCardPanel();
+  closeHordeTokenDialog();
   hordeGame = null;
   hordeUndo = null;
+  // The next game is a different deck and a different subtype, so neither the
+  // looked-up card text nor the remembered token stays useful.
+  hordeDetailCache.clear();
+  hordeTokenDraft = null;
   saveHordeGame();
   hideHordeOverlay();
   showHordeScreen("setup");
@@ -737,6 +1192,10 @@ function buildHordeOverlay() {
 }
 
 function showHordeOverlay(kind, title, message, actions) {
+  // The outcome and confirm overlay is the only thing that should be on screen
+  // once it appears, and both of the newer panels sit above it.
+  closeHordeCardPanel();
+  closeHordeTokenDialog();
   hordeUi.overlayTitle.textContent = title;
   hordeUi.overlayMessage.textContent = message;
   hordeUi.overlayActions.innerHTML = "";
@@ -761,6 +1220,8 @@ function showHordeScreen(name) {
 
 function enterHordeGame() {
   hordeUndo = null;
+  closeHordeCardPanel();
+  closeHordeTokenDialog();
   buildHordePlayers();
   renderHordeBattlefield();
   updateHordePlayers();
@@ -772,9 +1233,21 @@ function enterHordeGame() {
 }
 
 // Nothing else notices the view going away, and a stepper held while the player
-// taps Menu with a second finger never gets a pointerup on this screen.
+// taps Menu with a second finger never gets a pointerup on this screen. The two
+// panels are torn down here for the same reason: closing invalidates any detail
+// fetch still on the wire, and the token dialog otherwise leaves the shared
+// on-screen keyboard up over whatever view comes next.
 function onHordeHidden() {
   stopAllHordeRepeats();
+  closeHordeCardPanel();
+  if (hordeUi.tokenOverlay) {
+    // Not closeHordeTokenDialog(): its keyboard call is gated on this view
+    // still being visible, and by now it isn't. showView() has already put the
+    // keyboard away itself, so only the overlay needs hiding.
+    hordeUi.tokenOverlay.classList.remove("horde-modal--typing");
+    hordeUi.tokenPanel.classList.remove("horde-token-panel--typing");
+    hordeUi.tokenOverlay.classList.add("hidden");
+  }
 }
 
 function onHordeShown() {
@@ -801,6 +1274,8 @@ function buildHordeUi() {
   root.appendChild(hordeUi.setup);
   root.appendChild(hordeUi.game);
   root.appendChild(buildHordeOverlay());
+  root.appendChild(buildHordeCardPanel());
+  root.appendChild(buildHordeTokenDialog());
   hordeUi.startButton.disabled = true;
   restoreHordeGame();
   if (hordeGame) enterHordeGame();

@@ -22,6 +22,11 @@
   --horde-danger-glow: rgba(192, 57, 43, 0.45);
   --horde-scrim: rgba(20, 21, 26, 0.92);
   --horde-shadow: rgba(0, 0, 0, 0.5);
+
+  /* Tokens need to be told apart from revealed cards at a glance, and neither
+     of the two colours already in play will do it: danger is every creature's
+     left edge, and accent already means "revealed this turn". */
+  --horde-token: #5b8fb9;
 }
 
 #horde-root button {
@@ -255,9 +260,19 @@
   padding: 0 80px;
 }
 
+/* Sized in em off the container so the drawn icon scales with the type rather
+   than with a hardcoded pixel box. */
 .horde-nodb-icon {
-  font-size: 40px;
-  opacity: 0.7;
+  font-size: 44px;
+  line-height: 0;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.horde-nodb-icon svg {
+  width: 1em;
+  height: 1em;
+  display: block;
 }
 
 .horde-nodb-title {
@@ -405,11 +420,16 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Narrower than it was: this row now carries the tokens button too, and the
+   title has to keep enough room to still read as a count. */
 .horde-undo {
   flex: none;
-  max-width: 230px;
+  max-width: 190px;
   min-height: 44px;
   padding: 0 16px;
   background: var(--horde-raised);
@@ -420,6 +440,25 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Last in the row, so it keeps the same place whether or not an undo is
+   pending - a control this often used should not move under the finger. */
+.horde-tokens-button {
+  flex: none;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--horde-raised);
+  color: var(--horde-token);
+  border: 1px solid var(--horde-token);
+  border-radius: 20px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.horde-tokens-button:active {
+  background: var(--horde-token);
+  color: var(--horde-on-accent);
 }
 
 .horde-field-scroll {
@@ -471,19 +510,47 @@
   overflow: hidden;
 }
 
+.horde-creature-foot {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
 .horde-creature-pt {
   flex: none;
-  align-self: flex-end;
+  margin-left: auto;
   font-size: 17px;
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
+.horde-creature-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--horde-token);
+  color: var(--horde-on-accent);
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .horde-creature:active {
   background: var(--surface);
   border-color: var(--accent);
   border-left-color: var(--accent);
+}
+
+/* Dashed rather than solid, and the token colour rather than danger: a token
+   is not a card off the library and the board has to say so. */
+.horde-creature--token {
+  border-left-style: dashed;
+  border-left-color: var(--horde-token);
 }
 
 .horde-creature--new {
@@ -700,4 +767,338 @@
   background: var(--accent);
   color: var(--horde-on-accent);
   font-weight: 600;
+}
+
+/* ---------- creature panel and token dialog ---------- */
+
+/* Above the outcome overlay, which is the only other thing that covers the
+   board. Explicit edges rather than `inset`, matching .horde-overlay: the
+   Chromium build on the Pi is only guaranteed to be as new as Slice 1's. */
+.horde-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--horde-scrim);
+}
+
+/* The on-screen keyboard is a fixed element with no z-index of its own, so a
+   positioned overlay that keeps a z-index paints its scrim straight over the
+   keys and swallows every tap. Giving the stacking position up for the
+   duration puts the keyboard back on top - it comes later in the document -
+   while the scrim still blocks the board underneath. */
+.horde-modal--typing {
+  z-index: auto;
+  align-items: flex-start;
+  padding-top: 14px;
+}
+
+.horde-card-panel,
+.horde-token-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  background: var(--surface);
+  border-radius: 16px;
+  border-top: 4px solid var(--accent);
+  box-shadow: 0 12px 40px var(--horde-shadow);
+}
+
+.horde-card-panel {
+  width: 660px;
+}
+
+.horde-card-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.horde-card-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.horde-card-name {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.horde-card-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.horde-card-pt {
+  flex: none;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* A fixed height rather than one driven by the rules text: the panel would
+   otherwise change size between a vanilla creature and a wall of reminder
+   text, and the buttons would move under the finger. */
+.horde-card-body {
+  flex: none;
+  height: 212px;
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.horde-card-art {
+  position: relative;
+  flex: none;
+  width: 150px;
+  border-radius: 8px;
+  background: var(--horde-raised);
+  overflow: hidden;
+}
+
+.horde-card-art-note {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Faded in on load so a slow decode never flashes a half-drawn card, and
+   `contain` so the whole card is visible rather than cropped. */
+.horde-card-photo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.horde-card-photo--on {
+  opacity: 1;
+}
+
+.horde-card-info {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.horde-card-typerow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.horde-card-type {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.horde-card-cost {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* pre-wrap because oracle text is stored with real newlines between abilities,
+   and double-faced cards are joined with a "//" line. */
+.horde-card-rules {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.horde-card-rules--none {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.horde-card-note {
+  margin: 8px 0 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.horde-card-note--quiet {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.horde-card-actions,
+.horde-token-actions {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.horde-card-button {
+  flex: 1;
+  min-height: 52px;
+  padding: 0 16px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.horde-card-button:active {
+  background: var(--horde-line);
+}
+
+/* Removal is the thing this panel is used for most, so it is the one action
+   that carries a colour - but it is still a deliberate second tap rather than
+   the instant kill a bare tile used to be. */
+.horde-card-button--remove {
+  background: var(--danger);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.horde-card-button--primary {
+  background: var(--accent);
+  color: var(--horde-on-accent);
+  font-weight: 600;
+}
+
+/* ---------- token dialog ---------- */
+
+.horde-token-panel {
+  width: 620px;
+  border-top-color: var(--horde-token);
+}
+
+.horde-token-title {
+  flex: none;
+  margin: 0 0 12px 0;
+  font-size: 21px;
+}
+
+.horde-token-field {
+  flex: none;
+  min-width: 0;
+}
+
+.horde-token-name-row {
+  display: flex;
+  gap: 8px;
+}
+
+.horde-token-input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  padding: 0 14px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: 1px solid var(--horde-line);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 17px;
+}
+
+.horde-token-keyboard,
+.horde-token-done {
+  flex: none;
+  min-height: 52px;
+  min-width: 110px;
+  padding: 0 18px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+/* Only one of the pair is ever up: Keyboard opens typing mode, Done leaves it. */
+.horde-token-done {
+  display: none;
+  background: var(--accent);
+  color: var(--horde-on-accent);
+  font-weight: 600;
+}
+
+.horde-token-numbers {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.horde-token-numbers .horde-token-field {
+  flex: 1;
+}
+
+.horde-token-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.horde-token-step {
+  flex: none;
+  width: 60px;
+  height: 52px;
+  background: var(--horde-raised);
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.horde-token-step:active {
+  background: var(--accent);
+  color: var(--horde-on-accent);
+}
+
+.horde-token-value {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* Typing mode: the keyboard owns the bottom 256px, so the dialog drops to the
+   name row alone and the overlay pins it to the top of the screen. */
+.horde-token-panel--typing .horde-token-numbers,
+.horde-token-panel--typing .horde-token-actions,
+.horde-token-panel--typing .horde-token-keyboard {
+  display: none;
+}
+
+.horde-token-panel--typing .horde-token-done {
+  display: block;
 }
