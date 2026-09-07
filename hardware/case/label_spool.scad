@@ -1,118 +1,150 @@
-// MTG Kiosk - label roll spool
+// MTG Kiosk - label roll arm
 //
-// Freestanding holder that sits behind the printer and feeds the rear label
-// inflow. Deliberately not bolted to the printer: the back face already
-// carries USB, DC in, the power rocker and the label slot, and hanging a roll
-// off it would crowd all four.
+// An L that bolts to the back wall of the riser and cantilevers a spindle out
+// across the back of the printer. The roll slides on from the free end and is
+// held by a cap, so reloading is: unscrew cap, old core off, new roll on, cap
+// back. No threading a bar through a frame one-handed.
 //
-//   openscad -o label_spool.stl -D 'part="upright"' label_spool.scad
-//   openscad -o spindle.stl     -D 'part="spindle"' label_spool.scad
+// Supported from one side only. A full 3in roll is about 500g, which at this
+// reach is roughly 0.3 Nm - under 1 MPa in the arm's section against PLA's
+// ~50 MPa. Strength was never the question here; the bolted joint and the
+// print orientation are, which is why the joint is four screws in a rectangle
+// and why the note below matters.
 //
-// CONFIRM THESE AGAINST A REAL ROLL BEFORE PRINTING. They are the common
-// values for 4x6 thermal stock, not measurements of the roll in hand, and the
-// printer's own paperwork has already been wrong twice.
+// PRINT THE ARM LYING ON ITS SIDE (largest flat face on the bed). Standing it
+// up puts the layer lines square across the bending stress at the root, which
+// is the one way to make a part this lightly loaded fail.
+//
+//   openscad -o arm.stl -D 'part="arm"' label_spool.scad
+//   openscad -o cap.stl -D 'part="cap"' label_spool.scad
 
 // -------------------------------------------------------------- roll (check)
-roll_max_d   = 105.0;   // outside diameter of a full roll
-roll_width   = 80.0;    // production stock here is 3in (76.2mm); 4in is 101.6
-core_d       = 25.4;    // 1in core. The other common size is 38mm (1.5in)
+// Common values for 4x6 thermal stock, NOT measurements of the roll in hand.
+// This printer's own paperwork has already been wrong twice; measure a roll.
+roll_max_d   = 105.0;   // outside diameter, full roll
+roll_width   =  80.0;   // production stock here is 3in = 76.2
+core_d       =  25.4;   // 1in core; 38mm (1.5in) is the other common size
 
-// ------------------------------------------------------------------ hardware
-spindle_d    = core_d - 1.2;   // slips inside the core and turns freely
-spindle_over = 18.0;           // length beyond the roll, each side
-slot_w       = spindle_d + 1.0;
+// --------------------------------------------------- interface with the riser
+// These four must match display_cradle.scad.
+arm_mount_dx = 22.0;
+arm_mount_dz = 18.0;
+screw_d      =  3.20;
+riser_h      = 42.0;
 
-base_t       = 5.0;
-base_d       = 70.0;
-upright_t    = 6.0;
-wall         = 3.0;
+// ------------------------------------------------------------------- geometry
+plate_w      = arm_mount_dx + 20;
+plate_h      = arm_mount_dz + 20;
+plate_t      =  6.0;
 
-// Spindle centre height. The roll has to clear the base at full diameter, and
-// a little more so a fresh roll doesn't drag as it unwinds.
-spindle_h    = roll_max_d / 2 + base_t + 6;
+// How far back the spindle sits from the riser's wall.
+//
+// The obvious answer - push it back until a full roll clears the rear
+// connectors - is the wrong one. Reach is what tips the machine: a 500g roll
+// at 70mm is a 0.34 Nm tipping moment against about 0.99 Nm of restoring
+// moment from the printer and the display stack, and going to 102mm to clear
+// the cables horizontally cuts that margin from ~2.9x to ~2.0x.
+//
+// So the roll clears the cables *vertically* instead. The spindle sits level
+// with the riser's mid-height, roughly 123mm above the table, which hangs a
+// full roll between about 70mm and 176mm - entirely above the printer's rear
+// connectors on a 102mm-tall body. The label then pays off downward and
+// forward into the rear slot, which is the natural path anyway.
+arm_reach    = 70.0;
+arm_w        = 12.0;    // section across the bend
+arm_h        = 25.0;    // section in the bending direction
 
-part = "upright";       // "upright" | "spindle" | "both"
+// Spindle axis relative to the mounting plate's centre. Zero puts it level
+// with the plate; increase it to hang the roll lower once the rear slot's
+// actual height is known.
+spindle_drop = 0.0;
+
+spindle_d    = core_d - 1.2;    // turns freely inside the core
+spindle_len  = roll_width + 14; // roll plus room for the cap
+cap_d        = spindle_d + 14;
+cap_t        =  5.0;
+cap_screw_d  =  3.20;
+
+part = "arm";           // "arm" | "cap" | "both"
 
 $fn = 72;
 
-// ------------------------------------------------------------------ geometry
+// --------------------------------------------------------------------- parts
 
-upright_w = spindle_d + wall * 4;
+module mount_holes() {
+  for (dx = [-1, 1], dz = [-1, 1])
+    translate([dx * arm_mount_dx / 2, 0, dz * arm_mount_dz / 2])
+      rotate([-90, 0, 0]) children();
+}
 
-// One side support. Two are printed; they are mirror images only in placement,
-// so the same part is used twice.
-module upright() {
+module arm() {
   difference() {
     union() {
-      // Foot, long in the feed direction so a full roll can't tip it.
+      // Plate against the riser wall.
+      translate([0, 0, 0])
+        cube([plate_w, plate_t, plate_h], center = true);
+
+      // The leg, running back from the plate.
       hull() {
-        translate([-upright_w / 2, -base_d / 2, 0]) cube([upright_w, base_d, base_t]);
-        translate([0, 0, base_t]) cylinder(h = 0.1, d = upright_w);
-      }
-      // Post.
-      hull() {
-        translate([-upright_t / 2, -upright_w / 2, 0]) cube([upright_t, upright_w, 1]);
-        translate([-upright_t / 2, 0, spindle_h]) rotate([0, 90, 0])
-          cylinder(h = upright_t, d = upright_w);
+        translate([0, plate_t / 2, -spindle_drop / 2])
+          cube([arm_w, 0.1, plate_h * 0.8], center = true);
+        translate([0, plate_t / 2 + arm_reach, -spindle_drop])
+          cube([arm_w, 0.1, arm_h], center = true);
       }
 
-      // Gussets fore and aft. The static weight of the roll is straight down
-      // and the post handles that easily, but paying out label pulls the top
-      // horizontally toward the printer, and that is a bending moment on a
-      // 6mm blade 63mm long. These take it into the foot instead.
-      for (dir = [-1, 1])
-        hull() {
-          translate([-upright_t / 2, dir * (upright_w / 2 - 1), 0])
-            cube([upright_t, 1, base_t + 1]);
-          translate([-upright_t / 2, dir * (base_d / 2 - wall), 0])
-            cube([upright_t, wall, base_t]);
-          translate([-upright_t / 2, dir * (upright_w / 2 - 1), spindle_h * 0.55])
-            cube([upright_t, 1, 1]);
-        }
+      // Spindle, cantilevered across the back of the printer.
+      translate([arm_w / 2, plate_t / 2 + arm_reach, -spindle_drop])
+        rotate([0, 90, 0]) cylinder(h = spindle_len, d = spindle_d);
+
+      // Shoulder where the spindle leaves the leg, so the roll cannot ride
+      // back against the leg and bind.
+      translate([arm_w / 2, plate_t / 2 + arm_reach, -spindle_drop])
+        rotate([0, 90, 0]) cylinder(h = 3, d = spindle_d + 12);
     }
 
-    // Open-topped slot rather than a bored hole: the spindle lifts straight
-    // out with the roll still on it, so reloading doesn't mean threading a bar
-    // through a captive frame with one hand.
-    translate([-upright_t / 2 - 1, -slot_w / 2, spindle_h])
-      cube([upright_t + 2, slot_w, spindle_h]);
-    translate([-upright_t / 2 - 1, 0, spindle_h]) rotate([0, 90, 0])
-      cylinder(h = upright_t + 2, d = slot_w);
+    // Into the riser's anchors.
+    mount_holes() translate([0, 0, -plate_t]) cylinder(h = plate_t * 3, d = screw_d);
 
-    // Chamfer the slot mouth so the spindle drops in without being aimed.
-    // This has to sit at the top of the post; an earlier version put it at
-    // twice the spindle height, which is above the part, so it cut nothing.
-    translate([-upright_t / 2 - 1, 0, spindle_h + upright_w / 2])
-      rotate([0, 90, 0]) cylinder(h = upright_t + 2, d1 = slot_w * 2.4, d2 = slot_w);
+    // Axial pilot for the retaining cap.
+    translate([arm_w / 2 + spindle_len - 12, plate_t / 2 + arm_reach, -spindle_drop])
+      rotate([0, 90, 0]) cylinder(h = 14, d = cap_screw_d - 0.6);
+
+    // Hollow the spindle. It is the longest unsupported run on the part and
+    // solid bar adds mass at the worst place for a cantilever without adding
+    // meaningful stiffness.
+    translate([arm_w / 2 + 6, plate_t / 2 + arm_reach, -spindle_drop])
+      rotate([0, 90, 0]) cylinder(h = spindle_len - 20, d = spindle_d - 7);
   }
 }
 
-module spindle() {
-  length = roll_width + spindle_over * 2;
+// Slides on after the roll and takes one M3 into the spindle's end.
+module cap() {
   difference() {
     union() {
-      cylinder(h = length, d = spindle_d);
-      // End flanges stop the roll walking off while it unwinds.
-      for (z = [0, length]) translate([0, 0, z])
-        cylinder(h = 3, d = spindle_d + 10, center = true);
+      cylinder(h = cap_t, d = cap_d);
+      // Spigot into the spindle bore, so the cap stays square to the axis
+      // rather than pivoting on a single screw.
+      translate([0, 0, -6]) cylinder(h = 6.5, d = spindle_d - 7.4);
     }
-    // Hollow: this is the longest part on the plate and solid bar is wasted
-    // filament with no strength to show for it in bending.
-    translate([0, 0, -1]) cylinder(h = length + 2, d = spindle_d - 5);
+    translate([0, 0, -8]) cylinder(h = cap_t + 12, d = cap_screw_d);
+    translate([0, 0, cap_t - 2.4]) cylinder(h = 3, d = cap_screw_d * 2);
+    // Finger grip.
+    for (a = [0 : 45 : 359])
+      rotate([0, 0, a]) translate([cap_d / 2, 0, -1])
+        cylinder(h = cap_t + 2, d = 3.4);
   }
 }
 
-if (part == "upright")      upright();
-else if (part == "spindle") spindle();
+if (part == "arm")      arm();
+else if (part == "cap") cap();
 else {
-  span = roll_width + upright_t;
-  translate([-span / 2, 0, 0]) upright();
-  translate([ span / 2, 0, 0]) upright();
-  translate([-(roll_width / 2 + spindle_over), 0, spindle_h]) rotate([0, 90, 0]) spindle();
+  arm();
+  translate([arm_w / 2 + spindle_len + 10, plate_t / 2 + arm_reach, -spindle_drop])
+    rotate([0, 90, 0]) cap();
 }
 
-echo(str("spindle centre height: ", spindle_h, " mm"));
-echo(str("clear span needed between uprights: ", roll_width, " mm"));
-echo(str("overall width with uprights: ",
-         roll_width + spindle_over * 2 + upright_t * 2, " mm"));
-echo(str("upright footprint: ", upright_w, " x ", base_d, " mm"));
+echo(str("arm reach (wall to spindle axis): ", arm_reach, " mm"));
+echo(str("spindle: ", spindle_d, " dia x ", spindle_len,
+         " long, for a ", roll_width, " wide roll"));
+echo(str("roll clearance behind the wall: ",
+         arm_reach - roll_max_d / 2, " mm at full diameter"));

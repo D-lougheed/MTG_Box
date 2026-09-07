@@ -16,9 +16,10 @@ the gap.
    └─────────────────────────────┘        ~159 mm overall
 ```
 
-The label roll sits on a separate freestanding spool behind the printer, feeding
-the rear inflow. It is not bolted to the printer: that face already carries four
-things.
+The label roll hangs off an L-shaped arm bolted to the riser's back wall — part
+of the same assembly, supported from one side only, so a roll slides on from the
+free end and a cap screws over it. Anchors exist at both ends of that wall, so
+the arm can go on whichever side suits; the arm itself is unhanded.
 
 ```bash
 openscad -o cradle.stl   -D 'part="cradle"'   case/display_cradle.scad
@@ -27,8 +28,8 @@ openscad -o riser.stl    -D 'part="riser"'    case/display_cradle.scad
 openscad -o drill.stl    -D 'part="drill"'    case/display_cradle.scad
 openscad -o template.stl -D 'part="template"' case/display_cradle.scad
 
-openscad -o upright.stl  -D 'part="upright"'  case/label_spool.scad   # print 2
-openscad -o spindle.stl  -D 'part="spindle"'  case/label_spool.scad
+openscad -o arm.stl      -D 'part="arm"'      case/label_spool.scad
+openscad -o cap.stl      -D 'part="cap"'      case/label_spool.scad
 ```
 
 One M3 screw per corner runs up through the riser and the retainer into the
@@ -81,8 +82,31 @@ wrong, and a failed 4-hour print is not.
 stock here is 3in = 76.2), core 25.4 (1in — 38mm is the other common size).
 Measure a real roll and change those three numbers.
 
+**Where the rear label slot sits.** `spindle_drop` is 0, which hangs a full roll
+between roughly 70 and 176 mm above the table — chosen to clear the printer's
+rear connectors vertically rather than reaching further back to clear them
+horizontally, because reach is what tips the machine. Increase it to hang the
+roll lower once the slot's real height is known.
+
 **Where the printer's top shell will take a screw.** The riser's four holes are
 on a 150 x 74 pattern; `drill.stl` puts them in the right place, but it assumes
 there is something behind the shell worth screwing into. Check what the top
 looks like from the inside before drilling — if it's unsupported thin plastic,
 the load wants spreading rather than four point fixings.
+
+## Why the arm reaches 70 mm and not further
+
+Pushing the spindle back until a full roll clears the rear cables horizontally
+would need about 102 mm, and reach is the thing that tips this over. A 500 g
+roll at 70 mm is a 0.34 Nm tipping moment against roughly 0.99 Nm of restoring
+moment from the printer and the display stack — about 2.9x. At 102 mm that
+margin falls to 2.0x.
+
+Going up instead of back costs nothing: at 70 mm the roll hangs clear above a
+102 mm-tall printer's connectors, and the label pays off downward and forward
+into the slot, which is the path it wants to take anyway.
+
+Strength was never the constraint. Even at 102 mm the arm sees under 1 MPa
+against PLA's ~50 MPa. **Print the arm on its side** — standing it up puts the
+layer lines square across the bending stress at the root, which is the one way
+to break a part loaded this lightly.

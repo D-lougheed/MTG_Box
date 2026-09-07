@@ -83,6 +83,22 @@ mount_screw_d = 3.40;   // M3 clearance into a tapped shell
 mount_dx      = 150.0;
 mount_dy      =  74.0;
 
+// Anchor pads for the label arm, inside the riser's back wall. Provided at
+// both ends so the arm can go on whichever side suits the bench - the arm
+// itself is handed only by which pair it bolts to.
+//
+// A full 3in roll is about 500g, which at this reach is roughly 0.3 Nm and
+// well under a tenth of a MPa in a 12x25 section. Strength is not the
+// question; the joint is, so it is four screws in a rectangle rather than two
+// in a line, which is what actually resists the roll trying to rotate the
+// bracket off the wall.
+arm_mount_x   = 76.0;   // centre of the pair, from the riser's centreline
+arm_mount_dx  = 22.0;
+arm_mount_dz  = 18.0;
+arm_mount_z   = 21.0;
+arm_boss_d    =  8.0;
+arm_boss_len  = 11.0;
+
 part = "cradle";        // "cradle" | "retainer" | "riser" | "both"
                         // "template" (paper, panel fit) | "drill" (printer top)
 
@@ -191,6 +207,15 @@ module mount_positions() {
   for (x = [-1, 1], y = [-1, 1]) translate([x * mount_dx / 2, y * mount_dy / 2, 0]) children();
 }
 
+// Four anchor points per end, on the inside of the back wall.
+module arm_anchor_positions(side) {
+  for (dx = [-1, 1], dz = [-1, 1])
+    translate([side * arm_mount_x + dx * arm_mount_dx / 2,
+               -outer_h / 2 + riser_wall,
+               arm_mount_z + dz * arm_mount_dz / 2])
+      rotate([-90, 0, 0]) children();
+}
+
 // Lifts the display clear of the printer's top so the Pi has somewhere to live.
 // Open on all four sides: the Pi needs air, and its USB and power tails have to
 // get to the back of the printer where every socket is.
@@ -208,6 +233,11 @@ module riser() {
       // Top bosses, aligned to the cradle's retainer screws so one screw per
       // corner carries cradle, retainer and riser together.
       boss_positions() cylinder(h = riser_h, d = boss_d);
+
+      // Label-arm anchors. They sit at the ends of the back wall, outside the
+      // Pi's 85mm width, so they take nothing away from the board's space.
+      for (side = [-1, 1])
+        arm_anchor_positions(side) cylinder(h = arm_boss_len, d = arm_boss_d);
     }
 
     // Screws up into the cradle.
@@ -218,6 +248,11 @@ module riser() {
       translate([0, 0, -1]) cylinder(h = flange_t + 2, d = mount_screw_d);
       translate([0, 0, flange_t - 1.4]) cylinder(h = 2, d = screw_head_d);
     }
+
+    // Pilot holes through the back wall and into the arm anchors.
+    for (side = [-1, 1])
+      arm_anchor_positions(side) translate([0, 0, -riser_wall - 1])
+        cylinder(h = arm_boss_len + riser_wall + 2, d = screw_d - 0.6);
 
     // Cable and air openings. The back one is wide because everything - USB to
     // the printer, USB-C power, and the label path - is behind the machine.
