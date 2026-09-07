@@ -1,12 +1,39 @@
 # Enclosure
 
-Parametric OpenSCAD source for the table-centre case. Rendered with:
+The display sits on top of the printer rather than in a box around it. The
+printer's top face is clear — USB, DC in, the power rocker and the label inflow
+are all on the back — so a riser lifts the screen above it and the Pi lives in
+the gap.
+
+```
+        display (164.9 x 102, screen up)
+   ┌─────────────────────────────┐
+   │  cradle + retainer          │  188.7 x 108.6 x 15
+   ├─────────────────────────────┤
+   │  riser  (Pi hangs in here)  │  42 tall, open all round
+   ├─────────────────────────────┤
+   │  printer  220 x 112 x 102   │  measured, not from the manual
+   └─────────────────────────────┘        ~159 mm overall
+```
+
+The label roll sits on a separate freestanding spool behind the printer, feeding
+the rear inflow. It is not bolted to the printer: that face already carries four
+things.
 
 ```bash
-openscad -o display_cradle.stl -D 'part="cradle"' case/display_cradle.scad
-openscad -o retainer.stl      -D 'part="retainer"' case/display_cradle.scad
-openscad -o template.stl      -D 'part="template"' case/display_cradle.scad
+openscad -o cradle.stl   -D 'part="cradle"'   case/display_cradle.scad
+openscad -o retainer.stl -D 'part="retainer"' case/display_cradle.scad
+openscad -o riser.stl    -D 'part="riser"'    case/display_cradle.scad
+openscad -o drill.stl    -D 'part="drill"'    case/display_cradle.scad
+openscad -o template.stl -D 'part="template"' case/display_cradle.scad
+
+openscad -o upright.stl  -D 'part="upright"'  case/label_spool.scad   # print 2
+openscad -o spindle.stl  -D 'part="spindle"'  case/label_spool.scad
 ```
+
+One M3 screw per corner runs up through the riser and the retainer into the
+cradle, so a single fastener carries the whole stack. Four more go down through
+the riser's flange into the printer's top shell.
 
 STLs are **generated, not committed** — same rule as the card database. The
 `.scad` files are the source of truth, and every dimension is a named parameter
@@ -46,3 +73,16 @@ Render the `template` part and print it **on paper at 100% scale**, then lay the
 real panel on it. The panel is third-party and the drawing is the only source
 for its dimensions; a sheet of paper is a cheap way to find out the drawing is
 wrong, and a failed 4-hour print is not.
+
+## Still to confirm before printing
+
+**The roll.** `label_spool.scad`'s three roll figures are the common values for
+4x6 thermal stock, not measurements: outside diameter 105, width 80 (production
+stock here is 3in = 76.2), core 25.4 (1in — 38mm is the other common size).
+Measure a real roll and change those three numbers.
+
+**Where the printer's top shell will take a screw.** The riser's four holes are
+on a 150 x 74 pattern; `drill.stl` puts them in the right place, but it assumes
+there is something behind the shell worth screwing into. Check what the top
+looks like from the inside before drilling — if it's unsupported thin plastic,
+the load wants spreading rather than four point fixings.

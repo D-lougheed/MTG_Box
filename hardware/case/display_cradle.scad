@@ -53,7 +53,38 @@ boss_d        = 8.00;
 // radius. The ribbon is the constraint, not the board.
 rear_clearance = 34.00;
 
-part = "cradle";        // "cradle" | "retainer" | "both" | "template"
+// Printer, measured on the unit (the manual's 252 x 180 x 152 is the carton or
+// another variant). USB, DC in, the power rocker and the label inflow are all
+// on the back, and the top face is clear - so the display can sit on top with
+// nothing to work around.
+printer_w    = 220.0;
+printer_d    = 112.0;
+printer_h    = 102.0;
+
+// Height of the gap the riser opens up between the printer's top face and the
+// cradle's underside. The Pi is bolted to the panel's back on the supplied
+// copper pillars, so it hangs down into this space along with the FPC ribbon's
+// bend and the USB and power tails that have to reach the back of the printer.
+riser_h      = 42.0;
+flange_t     = 3.0;
+
+// Derived, not chosen. The outer plate is sized as boss centre + boss radius +
+// `wall`, so a skirt exactly `wall` thick puts its inner surface precisely
+// tangent to the bosses - which is not a solid, and OpenSCAD rightly refuses
+// to call it 2-manifold. Making the skirt thicker than `wall` by a definite
+// amount forces a real intersection, and keeps doing so if boss_d or wall
+// change later.
+riser_boss_overlap = 1.5;
+riser_wall   = wall + riser_boss_overlap;
+
+// Screws down into the printer's own top shell. Positions are echoed by the
+// drill template so the holes get made once, in the right place.
+mount_screw_d = 3.40;   // M3 clearance into a tapped shell
+mount_dx      = 150.0;
+mount_dy      =  74.0;
+
+part = "cradle";        // "cradle" | "retainer" | "riser" | "both"
+                        // "template" (paper, panel fit) | "drill" (printer top)
 
 $fn = 64;
 
@@ -156,8 +187,66 @@ module template() {
   }
 }
 
+module mount_positions() {
+  for (x = [-1, 1], y = [-1, 1]) translate([x * mount_dx / 2, y * mount_dy / 2, 0]) children();
+}
+
+// Lifts the display clear of the printer's top so the Pi has somewhere to live.
+// Open on all four sides: the Pi needs air, and its USB and power tails have to
+// get to the back of the printer where every socket is.
+module riser() {
+  difference() {
+    union() {
+      // Bottom flange, screwed to the printer's top shell.
+      rounded_plate(outer_w, outer_h, flange_t);
+      // Skirt.
+      difference() {
+        rounded_plate(outer_w, outer_h, riser_h);
+        translate([0, 0, -1])
+          rounded_plate(outer_w - riser_wall * 2, outer_h - riser_wall * 2, riser_h + 2);
+      }
+      // Top bosses, aligned to the cradle's retainer screws so one screw per
+      // corner carries cradle, retainer and riser together.
+      boss_positions() cylinder(h = riser_h, d = boss_d);
+    }
+
+    // Screws up into the cradle.
+    boss_positions() translate([0, 0, -1]) cylinder(h = riser_h + 2, d = screw_d);
+
+    // Into the printer's top shell.
+    mount_positions() {
+      translate([0, 0, -1]) cylinder(h = flange_t + 2, d = mount_screw_d);
+      translate([0, 0, flange_t - 1.4]) cylinder(h = 2, d = screw_head_d);
+    }
+
+    // Cable and air openings. The back one is wide because everything - USB to
+    // the printer, USB-C power, and the label path - is behind the machine.
+    for (side = [-1, 1])
+      translate([0, side * (outer_h / 2), riser_h / 2 + flange_t / 2])
+        cube([outer_w * 0.62, riser_wall * 4, riser_h - flange_t - 6], center = true);
+    for (side = [-1, 1])
+      translate([side * (outer_w / 2), 0, riser_h / 2 + flange_t / 2])
+        cube([riser_wall * 4, outer_h * 0.45, riser_h - flange_t - 6], center = true);
+  }
+}
+
+// 1:1 drilling guide for the printer's top face. Printed flat and laid on the
+// printer, it puts the four holes exactly under the riser's flange - the shell
+// only gets drilled once, and not by eye.
+module drill_template() {
+  difference() {
+    rounded_plate(printer_w - 6, printer_d - 6, 1.6);
+    mount_positions() translate([0, 0, -1]) cylinder(h = 4, d = mount_screw_d);
+    // A window through the middle so the printer's own features stay visible
+    // while the template is being lined up.
+    rounded_plate(mount_dx - 30, mount_dy - 30, 6, r = 4);
+  }
+}
+
 if (part == "cradle")        cradle();
 else if (part == "retainer") retainer();
+else if (part == "riser")    riser();
+else if (part == "drill")    drill_template();
 else if (part == "template") template();
 else {
   cradle();
