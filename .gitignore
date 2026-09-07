@@ -11,3 +11,7 @@ data/
 
 # Local editor/agent tooling config
 .claude/
+
+# Rendered from hardware/case/*.scad, which is the source of truth
+hardware/**/*.stl
+hardware/**/*.png
