@@ -17,6 +17,19 @@ That full scope is a platform, not a feature, so it is decomposed into five slic
 | Board | Raspberry Pi 5, 4 GB |
 | Display | 7" DSI, 800x480 IPS, capacitive touch (~2 point), 15-pin 1.0 mm FPC via 22-to-15 adapter |
 | Printer | miemieyo M4202 / M4201, 4x6 direct thermal, 203 DPI, monochrome, USB, self-powered |
+
+**Printer power and size, from the M4202 manual (recorded 2026-09-07):** the
+supply is **AC 100-240V in, DC 24V 2.5A out (60W)**, and the body is
+**252 x 180 x 152 mm**, 1.36 kg.
+
+Both figures matter for the enclosure work. The 24V rules out running the Pi
+from the printer's supply without a buck converter, and the 60W budget is sized
+for the print head — which draws hardest exactly when a print starts. Sharing it
+would drop the Pi's rail at the worst possible moment, and would re-create the
+ground-loop path that item 7 below already lists as a candidate cause of the USB
+disconnects. **The Pi keeps its own 5.1V 5A supply**; that also matters because a
+Pi 5 that can't confirm a 5A supply caps total USB current at 600mA, and the
+printer is a USB device on that bus.
 | OS | Raspberry Pi OS Desktop (64-bit) |
 
 Useful derived constant: a real Magic card (63 x 88 mm) is 503 x 703 dots at 203 DPI — reference only. **Actual production stock for this project is 3in x 2in (609 x 406 dots at 203 DPI), confirmed 2026-09-03**: a landscape overlay label applied on top of an existing bulk/common card, not a full-card replica. This locks in the print path as text-only by design (name, mana cost, type line, rules text), not an attempted card-art reproduction.
