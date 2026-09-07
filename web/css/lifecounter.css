@@ -265,6 +265,35 @@
   opacity: 1;
 }
 
+/* Once the hold repeat engages, a tick is worth ten rather than one. Announcing
+   that on the zone is what keeps a decisive hold from being a surprising one:
+   the player sees the tens arrive and can lift before the next tick lands. */
+.lc-zone.lc-repeating {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+
+/* Stacked under the sign, not beside it. Inline it would join the flex row and
+   both shift the sign when the repeat engages and, at eight players with a
+   three-digit total, run into the centred life number — which grows toward the
+   zones exactly when someone is holding one. Absolute keeps it clear of both. */
+.lc-zone.lc-repeating::after {
+  content: "10";
+  position: absolute;
+  top: calc(50% + 20px);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.lc-zone-minus.lc-repeating::after {
+  left: 14px;
+}
+
+.lc-zone-plus.lc-repeating::after {
+  right: 14px;
+}
+
 .lc-tile-face {
   position: absolute;
   inset: 0;

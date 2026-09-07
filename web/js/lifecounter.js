@@ -12,12 +12,25 @@ const LC_COLUMNS = { 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4 };
 const LC_LIFE_SIZES = { 1: "132px", 2: "100px", 3: "86px", 4: "64px" };
 const LC_NAME_SIZES = { 1: "17px", 2: "14px", 3: "13px", 4: "12px" };
 
-// Walking 40 down to 12 must not cost 28 separate taps, but a single deliberate
-// tap still has to move exactly one — hence the delay before repeat starts.
-const LC_REPEAT_DELAY = 400;
-const LC_REPEAT_FIRST = 300;
-const LC_REPEAT_FASTEST = 80;
-const LC_REPEAT_DECAY = 0.82;
+/* Press-and-hold. A tap always moves exactly one; only the hold repeat differs,
+   so each binding carries its own step and tick rate.
+
+   A misread tap now costs ten rather than one, so the hold has to be the harder
+   thing to trigger by accident: 500ms is the long-press threshold people already
+   have in their fingers from every other touch device. */
+const LC_REPEAT_DELAY = 500;
+
+// Tens, because the chore this removes is walking 40 down to 12 one tap at a
+// time. No acceleration: a tick is worth 10, so a tick you fail to release on
+// costs 10, and 350ms is roughly the time it takes to see a number and lift a
+// finger. Steady and stoppable beats fast — 40 to 10 still lands inside 1.5s.
+const LC_LIFE_REPEAT = { step: 10, interval: 350 };
+
+// Commander damage runs 0-21 and poison 0-10, so a step of 10 would cross the
+// whole useful range in one tick. These keep stepping by 1 and tick faster to
+// compensate: ~7 per second covers 0 to 21 in three seconds, and overshooting
+// one of these costs a single tap to undo.
+const LC_SMALL_REPEAT = { step: 1, interval: 140 };
 
 let lcGame = null;
 let lcTiles = [];
@@ -149,26 +162,35 @@ function lcLoad() {
    counting down froze the moment seat 2 joined in, still holding, and lost its
    press highlight with it. Two players adjusting at once is the normal case. */
 
+// lc-repeating is only ever set alongside lc-pressed, so every place that drops
+// the press highlight drops the repeat cue with it and neither can be stranded
+// on its own.
+function lcClearPressed(el) {
+  el.classList.remove("lc-pressed", "lc-repeating");
+}
+
 function lcStopRepeat(pointerId) {
   const entry = lcRepeats.get(pointerId);
   if (!entry) return;
   clearTimeout(entry.timer);
-  entry.el.classList.remove("lc-pressed");
+  lcClearPressed(entry.el);
   lcRepeats.delete(pointerId);
 }
 
 function lcStopAllRepeats() {
   lcRepeats.forEach((entry) => {
     clearTimeout(entry.timer);
-    entry.el.classList.remove("lc-pressed");
+    lcClearPressed(entry.el);
   });
   lcRepeats.clear();
   // A tile torn down mid-press leaves its highlight on an element the map has
   // already forgotten, so the sweep stays as the backstop it always was.
-  document.querySelectorAll(".lc-pressed").forEach((el) => el.classList.remove("lc-pressed"));
+  document.querySelectorAll(".lc-pressed").forEach(lcClearPressed);
 }
 
-function lcBindRepeat(el, apply) {
+function lcBindRepeat(el, apply, repeat) {
+  // Small steps are the safe default: a binding has to ask for the big one.
+  const held = repeat || LC_SMALL_REPEAT;
   el.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     const pointerId = event.pointerId;
@@ -180,13 +202,17 @@ function lcBindRepeat(el, apply) {
     } catch (err) {
       // Capture is best-effort; the window-level listeners below still cancel.
     }
-    apply();
-    const entry = { el: target, timer: null, interval: LC_REPEAT_FIRST };
+    // The press itself is always one. Only the repeat below uses the big step,
+    // so a deliberate tap can never move a player by ten.
+    apply(1);
+    const entry = { el: target, timer: null };
     lcRepeats.set(pointerId, entry);
     const tick = () => {
-      apply();
-      entry.interval = Math.max(LC_REPEAT_FASTEST, Math.round(entry.interval * LC_REPEAT_DECAY));
-      entry.timer = setTimeout(tick, entry.interval);
+      // Say so on the way in rather than after the fact: a player who can see
+      // the tens engage can lift before the next one lands.
+      target.classList.add("lc-repeating");
+      apply(held.step);
+      entry.timer = setTimeout(tick, held.interval);
     };
     entry.timer = setTimeout(tick, LC_REPEAT_DELAY);
   });
@@ -380,8 +406,8 @@ function lcBuildTile(seat) {
 
   const minus = lcButton("lc-zone lc-zone-minus", "−");
   const plus = lcButton("lc-zone lc-zone-plus", "+");
-  lcBindRepeat(minus, () => lcAdjustLife(index, -1));
-  lcBindRepeat(plus, () => lcAdjustLife(index, 1));
+  lcBindRepeat(minus, (step) => lcAdjustLife(index, -step), LC_LIFE_REPEAT);
+  lcBindRepeat(plus, (step) => lcAdjustLife(index, step), LC_LIFE_REPEAT);
   tile.appendChild(minus);
   tile.appendChild(plus);
 
@@ -496,8 +522,8 @@ function lcBuildDetail(index) {
   lcGame.players.forEach((opponent, opponentIndex) => {
     if (opponentIndex === index) return;
     const stepper = lcCreateStepper(opponent.name, opponentIndex);
-    lcBindRepeat(stepper.minus, () => lcAdjustCommander(index, opponentIndex, -1));
-    lcBindRepeat(stepper.plus, () => lcAdjustCommander(index, opponentIndex, 1));
+    lcBindRepeat(stepper.minus, (step) => lcAdjustCommander(index, opponentIndex, -step));
+    lcBindRepeat(stepper.plus, (step) => lcAdjustCommander(index, opponentIndex, step));
     opponents.push({ opponentIndex, stepper });
     commanderGrid.appendChild(stepper.row);
   });
@@ -510,8 +536,8 @@ function lcBuildDetail(index) {
   body.appendChild(lcEl("p", "lc-label", "Poison counters"));
   const poison = lcCreateStepper("Poison", null);
   poison.row.classList.add("lc-stepper-poison");
-  lcBindRepeat(poison.minus, () => lcAdjustPoison(index, -1));
-  lcBindRepeat(poison.plus, () => lcAdjustPoison(index, 1));
+  lcBindRepeat(poison.minus, (step) => lcAdjustPoison(index, -step));
+  lcBindRepeat(poison.plus, (step) => lcAdjustPoison(index, step));
   body.appendChild(poison.row);
   card.appendChild(body);
 
