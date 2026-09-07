@@ -5,6 +5,11 @@
 // life counter mid-game.
 const VIEW_HOOKS = {
   "settings": "onSettingsShown",
+  "settings-printer": "onSettingsShown",
+  "settings-cards": "onSettingsShown",
+  "settings-update": "onSettingsShown",
+  "settings-display": "onSettingsShown",
+  "wifi": "onWifiShown",
   "life-counter": "onLifeCounterShown",
   "random-card": "onRandomCardShown",
   "card-lookup": "onCardLookupShown",
@@ -47,8 +52,53 @@ function callViewHook(hookName) {
 //
 // This is load-bearing, not cosmetic: lifecounter.css and horde.css both
 // dropped the gutter they were reserving for the FAB once this existed.
-// Removing a view from this set puts the dice back on top of a live control.
-const FAB_HIDDEN_VIEWS = new Set(["life-counter", "horde-mode", "random-card", "card-lookup"]);
+//
+// The game screens are no longer in this set. The dice used to navigate away,
+// which meant losing the board mid-game; it now opens an overlay, so it can
+// live on those screens. It still overlaps a live control there - the corner
+// player's +1 half in the life counter - which is why it can be switched off
+// entirely in Settings.
+//
+// Card lookup keeps it hidden (it sat on the loyalty badge), and the
+// random-card view obviously doesn't need a shortcut to itself.
+const FAB_HIDDEN_VIEWS = new Set(["random-card", "card-lookup"]);
+
+const RANDOM_BUTTON_KEY = "mtgkiosk.showRandomButton";
+
+function randomButtonEnabled() {
+  try {
+    return localStorage.getItem(RANDOM_BUTTON_KEY) !== "off";
+  } catch (err) {
+    // Storage can throw outright; showing the button is the better default.
+    return true;
+  }
+}
+
+function setRandomButtonEnabled(enabled) {
+  try {
+    localStorage.setItem(RANDOM_BUTTON_KEY, enabled ? "on" : "off");
+  } catch (err) {
+    // Not persisting is survivable; refusing to apply the change is not.
+  }
+  renderRandomButtonSetting();
+  applyFabVisibility();
+}
+
+function renderRandomButtonSetting() {
+  const enabled = randomButtonEnabled();
+  document.querySelectorAll("[data-random-button]").forEach((button) => {
+    const on = button.dataset.randomButton === "on";
+    button.classList.toggle("option-selected", on === enabled);
+  });
+  document.getElementById("random-button-note").textContent = enabled
+    ? "The dice sits in the corner of every screen. On the life counter it covers part of the corner player's +1 area."
+    : "Hidden. Random Card is still on the main menu.";
+}
+
+function applyFabVisibility() {
+  const hide = FAB_HIDDEN_VIEWS.has(currentView) || !randomButtonEnabled();
+  document.getElementById("random-card-fab").classList.toggle("hidden", hide);
+}
 
 function showView(name) {
   const target = document.getElementById(`view-${name}`);
@@ -60,8 +110,8 @@ function showView(name) {
   hideKeyboard();
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   target.classList.remove("hidden");
-  document.getElementById("random-card-fab").classList.toggle("hidden", FAB_HIDDEN_VIEWS.has(name));
   currentView = name;
+  applyFabVisibility();
 
   // Teardown before setup, so a feature can't cancel work the incoming view
   // just started.
@@ -78,6 +128,11 @@ function onSettingsShown() {
   refreshCardsStatus();
 }
 
+function setTileNote(id, text) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = text;
+}
+
 function firstLine(text, maxLength = 80) {
   const line = String(text).split("\n")[0];
   if (line.length <= maxLength) return line;
@@ -91,8 +146,22 @@ document.querySelectorAll("[data-view]").forEach((el) => {
 });
 
 document.getElementById("random-card-fab").addEventListener("click", () => {
+  // An overlay rather than a view change, so rolling a card mid-game doesn't
+  // cost you the board. Falls back to the full view if cards.js failed to
+  // load, since a dice button that does nothing is worse than one that
+  // navigates.
+  if (typeof window.openRandomCardOverlay === "function") {
+    window.openRandomCardOverlay();
+    return;
+  }
   showView("random-card");
 });
+
+document.querySelectorAll("[data-random-button]").forEach((button) => {
+  button.addEventListener("click", () => setRandomButtonEnabled(button.dataset.randomButton === "on"));
+});
+renderRandomButtonSetting();
+applyFabVisibility();
 
 async function refreshStatus() {
   try {
@@ -106,10 +175,18 @@ async function refreshStatus() {
     document.getElementById("wifi-status").textContent = data.wifi_state;
     document.getElementById("version-status").textContent = data.version;
     document.getElementById("commit-status").textContent = data.commit;
+
+    // The menu replaced a page that showed every status at once, so each tile
+    // carries its own summary - otherwise finding out whether the printer is
+    // connected would cost a tap.
+    setTileNote("printer-tile-note", data.printer_connected ? "Connected" : "Not connected");
+    setTileNote("wifi-tile-note", data.wifi_state);
+    setTileNote("version-tile-note", "v" + data.version + " · " + data.commit);
   } catch (err) {
     const printerBadge = document.getElementById("printer-status");
     printerBadge.textContent = "unreachable";
     printerBadge.className = "badge badge-bad";
+    setTileNote("printer-tile-note", "unreachable");
   }
 }
 
@@ -131,6 +208,7 @@ async function refreshCardsStatus() {
     if (data.updating) {
       const done = data.progress ? data.progress.done : 0;
       statusEl.textContent = "updating… " + done.toLocaleString() + " cards";
+      setTileNote("cards-tile-note", "updating…");
       button.disabled = true;
       if (cardsPollTimer === null) cardsPollTimer = setInterval(refreshCardsStatus, 1500);
       return;
@@ -143,6 +221,7 @@ async function refreshCardsStatus() {
     button.disabled = false;
     statusEl.textContent = data.available ? data.count.toLocaleString() + " cards" : "not downloaded";
     button.textContent = data.available ? "Update card database" : "Download card database";
+    setTileNote("cards-tile-note", data.available ? data.count.toLocaleString() + " cards" : "Not downloaded");
     renderImagesStatus(data.images);
     if (data.error) {
       document.getElementById("cards-update-status").textContent = "last update failed: " + firstLine(data.error);
@@ -380,10 +459,13 @@ function resetPasswordVisibility(input, toggle) {
   toggle.textContent = "Hide";
 }
 
-document.getElementById("wifi-settings-button").addEventListener("click", () => {
-  showView("wifi");
+// Wifi is reached from the Settings menu's own tile now, so the scan hangs off
+// the view hook rather than off a button. The button this replaced also kicked
+// off the scan; a plain data-view tile only navigates, so without this the
+// screen would open to an empty list.
+function onWifiShown() {
   loadWifiNetworks();
-});
+}
 
 async function loadWifiNetworks() {
   const statusEl = document.getElementById("wifi-scan-status");

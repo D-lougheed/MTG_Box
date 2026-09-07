@@ -37,68 +37,110 @@
     <div id="random-card-root"></div>
   </main>
 
+  <!-- Settings is a menu of sections rather than one long scrolling page.
+       Dragging a scrollbar on a 2-point resistive-feeling touchscreen is
+       genuinely awkward, and every section below fits 480px without one. -->
   <main id="view-settings" class="view hidden">
-    <div class="settings-scroll">
-      <h2>Settings</h2>
-      <section class="status-row">
-        <span>Printer:</span>
-        <span id="printer-status" class="badge badge-unknown">checking…</span>
-      </section>
-      <section class="status-row">
-        <span>Wifi:</span>
-        <span id="wifi-status">checking…</span>
-      </section>
-      <section class="status-row">
-        <span>Version:</span>
-        <span id="version-status">checking…</span>
-      </section>
-      <section class="status-row">
-        <span>Commit:</span>
-        <span id="commit-status">checking…</span>
-      </section>
-
-      <button id="selftest-button">Print self-test label</button>
-      <p id="selftest-result"></p>
-
-      <hr>
-
-      <button id="update-check-button">Check for updates</button>
-      <p id="update-status"></p>
-      <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
-
-      <hr>
-
-      <button id="wifi-settings-button">Connect to wifi network</button>
-
-      <hr>
-
-      <section class="status-row">
-        <span>Card database:</span>
-        <span id="cards-status">checking…</span>
-      </section>
-      <button id="cards-update-button">Download card database</button>
-      <p id="cards-update-status"></p>
-
-      <section class="status-row">
-        <span>Card images:</span>
-        <span id="images-status">checking…</span>
-      </section>
-      <button id="images-prefetch-button">Download all card images</button>
-      <button id="images-stop-button" class="hidden">Stop</button>
-      <p id="images-prefetch-status"></p>
-
-      <hr>
-
-      <h3 class="settings-heading">What to print</h3>
-      <div id="print-mode-options" class="option-row">
-        <button class="option" data-print-mode="art">Art &amp; text</button>
-        <button class="option" data-print-mode="image">Whole card</button>
-        <button class="option" data-print-mode="text">Text only</button>
-      </div>
-      <p id="print-mode-note" class="option-note"></p>
+    <h2>Settings</h2>
+    <div class="tile-grid settings-menu">
+      <button class="tile" data-view="settings-printer">
+        Printer
+        <span class="tile-note" id="printer-tile-note">checking…</span>
+      </button>
+      <button class="tile" data-view="settings-cards">
+        Card database
+        <span class="tile-note" id="cards-tile-note">checking…</span>
+      </button>
+      <button class="tile" data-view="wifi">
+        Wifi
+        <span class="tile-note" id="wifi-tile-note">checking…</span>
+      </button>
+      <button class="tile" data-view="settings-update">
+        Software update
+        <span class="tile-note" id="version-tile-note">checking…</span>
+      </button>
+      <button class="tile" data-view="settings-display">
+        Display
+        <span class="tile-note">Buttons and shortcuts</span>
+      </button>
     </div>
-
     <button class="back-button" data-view="menu">Back</button>
+  </main>
+
+  <main id="view-settings-printer" class="view hidden">
+    <h2>Printer</h2>
+    <section class="status-row">
+      <span>Status:</span>
+      <span id="printer-status" class="badge badge-unknown">checking…</span>
+    </section>
+
+    <button id="selftest-button">Print self-test label</button>
+    <p id="selftest-result"></p>
+
+    <h3 class="settings-heading">What to print</h3>
+    <div id="print-mode-options" class="option-row">
+      <button class="option" data-print-mode="art">Art &amp; text</button>
+      <button class="option" data-print-mode="image">Whole card</button>
+      <button class="option" data-print-mode="text">Text only</button>
+    </div>
+    <p id="print-mode-note" class="option-note"></p>
+
+    <button class="back-button" data-view="settings">Back</button>
+  </main>
+
+  <main id="view-settings-cards" class="view hidden">
+    <h2>Card database</h2>
+    <section class="status-row">
+      <span>Cards:</span>
+      <span id="cards-status">checking…</span>
+    </section>
+    <button id="cards-update-button">Download card database</button>
+    <p id="cards-update-status"></p>
+
+    <section class="status-row">
+      <span>Card images:</span>
+      <span id="images-status">checking…</span>
+    </section>
+    <button id="images-prefetch-button">Download all card images</button>
+    <button id="images-stop-button" class="hidden">Stop</button>
+    <p id="images-prefetch-status"></p>
+
+    <button class="back-button" data-view="settings">Back</button>
+  </main>
+
+  <main id="view-settings-update" class="view hidden">
+    <h2>Software update</h2>
+    <section class="status-row">
+      <span>Version:</span>
+      <span id="version-status">checking…</span>
+    </section>
+    <section class="status-row">
+      <span>Commit:</span>
+      <span id="commit-status">checking…</span>
+    </section>
+
+    <button id="update-check-button">Check for updates</button>
+    <p id="update-status"></p>
+    <button id="update-apply-button" class="hidden">Install update &amp; restart</button>
+
+    <button class="back-button" data-view="settings">Back</button>
+  </main>
+
+  <main id="view-settings-display" class="view hidden">
+    <h2>Display</h2>
+    <section class="status-row">
+      <span>Wifi:</span>
+      <span id="wifi-status">checking…</span>
+    </section>
+
+    <h3 class="settings-heading">Random card button</h3>
+    <div class="option-row" id="random-button-options">
+      <button class="option" data-random-button="on">Show</button>
+      <button class="option" data-random-button="off">Hide</button>
+    </div>
+    <p id="random-button-note" class="option-note"></p>
+
+    <button class="back-button" data-view="settings">Back</button>
   </main>
 
   <main id="view-wifi" class="view hidden">

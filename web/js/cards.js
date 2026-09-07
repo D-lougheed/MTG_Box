@@ -200,6 +200,16 @@
     return column;
   }
 
+  /* The one way a card gets onto a screen - the random view, the popup and the
+     lookup detail all come through here. Picture and text are swapped in one
+     synchronous block, so there is no frame where the last card's art sits
+     beside this card's rules. */
+  function paintCard(slot, card, isStale, detailed) {
+    slot.innerHTML = "";
+    slot.appendChild(imageColumn(card, isStale));
+    slot.appendChild(cardPanel(card, detailed));
+  }
+
   // ------------------------------------------------------------ shared plumbing
 
   async function fetchCardsStatus() {
@@ -243,6 +253,40 @@
       body: "Open Settings and download the card database to " + purpose + ".",
       retryLabel: "Try again",
     };
+  }
+
+  /* The full view and the popup roll the same way and fail for the same
+     reasons, so the request and its verdict live here and only the rendering
+     differs. Returns null when the caller has gone stale - a reply that lost
+     the race must paint nothing at all, not even a failure. */
+  async function requestRandomCard(isStale) {
+    try {
+      const response = await fetch("/api/cards/random");
+      if (isStale()) return null;
+      if (!response.ok) {
+        const status = await fetchCardsStatus();
+        if (isStale()) return null;
+        return {
+          failure: describeStatus(status, "roll a random card") || {
+            title: "Couldn't roll a card",
+            body: "The card database didn't answer (" + response.status + ").",
+            hideSettings: true,
+          },
+        };
+      }
+      const card = await response.json();
+      if (isStale()) return null;
+      return { card };
+    } catch (err) {
+      if (isStale()) return null;
+      return {
+        failure: {
+          title: "Couldn't roll a card",
+          body: firstLine(err.message),
+          hideSettings: true,
+        },
+      };
+    }
   }
 
   function buildNotice(onRetry) {
@@ -356,6 +400,7 @@
 
   async function rollCard() {
     const token = ++randomToken;
+    const isStale = () => randomToken !== token;
     randomCardId = null;
     randomPrintButton.disabled = true;
     setStatus(randomStatus, "", "");
@@ -366,43 +411,121 @@
       randomSlot.appendChild(make("div", "card-placeholder", "Rolling…"));
     }
     rollButton.disabled = true;
-    try {
-      const response = await fetch("/api/cards/random");
-      if (randomToken !== token) return;
-      if (!response.ok) {
-        const status = await fetchCardsStatus();
-        if (randomToken !== token) return;
-        showRandomNotice(
-          describeStatus(status, "roll a random card") || {
-            title: "Couldn't roll a card",
-            body: "The card database didn't answer (" + response.status + ").",
-            hideSettings: true,
-          }
-        );
-        return;
-      }
-      const card = await response.json();
-      if (randomToken !== token) return;
-      // Picture and text are swapped in one synchronous block, so there is no
-      // frame where the last card's art sits beside this card's rules.
-      randomSlot.innerHTML = "";
-      randomSlot.appendChild(imageColumn(card, () => randomToken !== token));
-      randomSlot.appendChild(cardPanel(card, false));
-      randomCardId = card.id;
+
+    const result = await requestRandomCard(isStale);
+    // Null means a newer roll owns this screen: leave every control as that
+    // roll left it, including the disabled buttons it is about to re-enable.
+    if (result === null) return;
+    if (result.card) {
+      paintCard(randomSlot, result.card, isStale, false);
+      randomCardId = result.card.id;
       randomPrintButton.disabled = false;
-    } catch (err) {
-      if (randomToken !== token) return;
-      showRandomNotice({
-        title: "Couldn't roll a card",
-        body: firstLine(err.message),
-        hideSettings: true,
-      });
-    } finally {
-      if (randomToken === token) {
-        rollButton.disabled = false;
-        randomSlot.classList.remove("is-loading");
-      }
+    } else {
+      showRandomNotice(result.failure);
     }
+    rollButton.disabled = false;
+    randomSlot.classList.remove("is-loading");
+  }
+
+  // ------------------------------------------------------- random card popup
+
+  /* The same roll, offered without leaving the screen you are on. Tapping the
+     dice mid-game must not cost anyone their life totals, so this paints over
+     whatever view is showing and gives it back untouched: it never calls
+     showView() and never reads or writes another feature's state. */
+  let popupToken = 0;
+  let popupCardId = null;
+
+  const popupLayer = make("div", "cards-popup hidden");
+  const popupPanel = make("div", "cards-popup-panel");
+  const popupSlot = make("div", "cards-panel-slot cards-popup-body");
+  const popupActions = make("div", "cards-popup-actions");
+  const popupRollButton = makeButton("Roll again", "cards-button cards-button-primary");
+  const popupPrintButton = makeButton("Print", "cards-button");
+  const popupCloseButton = makeButton("Back", "cards-button");
+  const popupStatus = make("p", "cards-status cards-popup-status");
+
+  popupPrintButton.disabled = true;
+  popupActions.appendChild(popupRollButton);
+  popupActions.appendChild(popupPrintButton);
+  popupActions.appendChild(popupCloseButton);
+  popupActions.appendChild(popupStatus);
+  popupPanel.appendChild(popupSlot);
+  popupPanel.appendChild(popupActions);
+  popupLayer.appendChild(popupPanel);
+
+  /* Body level, because every view is display:none the moment you leave it -
+     and inserted ahead of the on-screen keyboard so the keyboard, which is
+     fixed with no z-index of its own, still paints over this and stays
+     tappable. See the matching note in cards.css. */
+  const keyboardLayer = document.getElementById("onscreen-keyboard");
+  if (keyboardLayer && keyboardLayer.parentNode) {
+    keyboardLayer.parentNode.insertBefore(popupLayer, keyboardLayer);
+  } else {
+    document.body.appendChild(popupLayer);
+  }
+
+  popupRollButton.addEventListener("click", () => rollPopupCard());
+  popupCloseButton.addEventListener("click", closeRandomCardOverlay);
+  popupPrintButton.addEventListener("click", () => {
+    // The token, not the card id: it moves on a roll, a close and a reopen,
+    // so a verdict can never land on a screen that has moved past it.
+    const token = popupToken;
+    const cardId = popupCardId;
+    printCard(cardId, popupStatus, popupPrintButton, () => popupToken !== token);
+  });
+
+  popupLayer.addEventListener("click", (event) => {
+    // Only a tap on the scrim itself - the panel covers everything else.
+    if (event.target === popupLayer) closeRandomCardOverlay();
+  });
+
+  async function rollPopupCard() {
+    const token = ++popupToken;
+    const isStale = () => popupToken !== token;
+    popupCardId = null;
+    popupPrintButton.disabled = true;
+    setStatus(popupStatus, "", "");
+    popupSlot.classList.add("is-loading");
+    if (!popupSlot.firstChild) {
+      popupSlot.appendChild(make("div", "card-placeholder", "Rolling…"));
+    }
+    popupRollButton.disabled = true;
+
+    const result = await requestRandomCard(isStale);
+    if (result === null) return;
+    if (result.card) {
+      paintCard(popupSlot, result.card, isStale, false);
+      popupCardId = result.card.id;
+      popupPrintButton.disabled = false;
+    } else {
+      /* The failure goes where the card would have been rather than into the
+         full-screen notice: that notice's ways out are Settings and Menu, and
+         either would drop the game this is floating over. */
+      popupSlot.innerHTML = "";
+      const failure = make("div", "card-placeholder cards-popup-failure");
+      failure.appendChild(make("strong", "", result.failure.title));
+      failure.appendChild(make("span", "", result.failure.body));
+      popupSlot.appendChild(failure);
+    }
+    popupRollButton.disabled = false;
+    popupSlot.classList.remove("is-loading");
+  }
+
+  function openRandomCardOverlay() {
+    popupLayer.classList.remove("hidden");
+    rollPopupCard();
+  }
+
+  function closeRandomCardOverlay() {
+    // Bumping the token is what makes closing safe: a roll or a print still in
+    // flight lands on a token nobody is watching and paints nothing. Emptying
+    // the slot drops the image too, so reopening starts from "Rolling…"
+    // instead of flashing the card from the last time.
+    popupToken += 1;
+    popupCardId = null;
+    popupSlot.innerHTML = "";
+    popupLayer.classList.add("hidden");
   }
 
   // ------------------------------------------------------------- card lookup
@@ -546,9 +669,7 @@
     setKeyboardOpen(false);
     setStatus(detailStatus, "", "");
     detailPrintButton.disabled = false;
-    detailBody.innerHTML = "";
-    detailBody.appendChild(imageColumn(card, () => detailToken !== token));
-    detailBody.appendChild(cardPanel(card, true));
+    paintCard(detailBody, card, () => detailToken !== token, true);
     searchPane.classList.add("hidden");
     detailPane.classList.remove("hidden");
   }
@@ -622,6 +743,9 @@
 
   window.onRandomCardShown = onRandomCardShown;
   window.onRandomCardHidden = onRandomCardHidden;
+  // Not a view, so it has no show/hide hook: the shell opens it directly and
+  // closing is this file's own business.
+  window.openRandomCardOverlay = openRandomCardOverlay;
   window.onCardLookupShown = onCardLookupShown;
   window.onCardLookupHidden = onCardLookupHidden;
 })();

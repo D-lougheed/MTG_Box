@@ -1,9 +1,12 @@
 /* Random card (Slice 2) and card lookup (Slice 4).
 
    Mana and rarity colours are card data, not theme, so they live as tokens
-   scoped to these two views rather than in the shared palette. */
+   scoped to these views rather than in the shared palette. The popup is on the
+   list because it renders the same card panel from outside both views - at
+   body level, where none of these would otherwise resolve. */
 #view-random-card,
-#view-card-lookup {
+#view-card-lookup,
+.cards-popup {
   --mana-w: #fbf8e3;
   --mana-u: #b3ddf5;
   --mana-b: #c9bfbc;
@@ -328,6 +331,103 @@
   color: var(--text);
 }
 
+/* ------------------------------------------------------- random card popup */
+
+/* Fixed at body level because it has to cover any view, and every view is
+   display:none the moment you leave it.
+
+   z-index clears horde mode's own modal (6) - and is given up entirely while
+   the on-screen keyboard is up. The keyboard is a fixed element with no
+   z-index, so anything holding a positive one paints its scrim straight over
+   the keys and swallows every tap; horde mode's dialogs hit exactly this.
+   Nothing here needs typing, but this must not be what traps someone who
+   already had the keyboard open. */
+.cards-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 21, 26, 0.86);
+}
+
+/* A fixed size, not a fitted one: rolling is one tap and the panel resizing
+   under the user's finger between a vanilla bear and a planeswalker would move
+   the Roll again button out from under it. */
+.cards-popup-panel {
+  width: 680px;
+  max-width: 100%;
+  height: 416px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  /* The page background, so the card panel inside still reads as raised. */
+  background: var(--bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+.cards-popup-body {
+  min-height: 0;
+  gap: 14px;
+}
+
+/* The picture is the one part of the panel with a height of its own, so it is
+   also the only part that can escape it: the row gives up height when the
+   status line beside the buttons wraps, and a fixed 294px picture would then
+   hang out over the buttons and cover the way out. Letterboxed by object-fit
+   when the cap bites, which beats an unreachable Back button. */
+.cards-popup .card-image {
+  width: 210px;
+  height: 294px;
+  max-height: 100%;
+}
+
+.cards-popup-failure {
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 15px;
+}
+
+.cards-popup-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The only thing in the row allowed to grow: a wordy printer failure takes the
+   height it needs and the card area gives it up, rather than the panel growing
+   past the bottom of an 800x480 screen. */
+.cards-popup-status {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+}
+
+/* Only reachable if something else already had the keyboard up when this
+   opened - the wifi password screen is one tap from the dice. The keyboard
+   leaves 224px, which is not enough panel to be worth squeezing a card into:
+   instead the panel keeps its size and turns over, so the three controls sit
+   in that 224px and the picture is what the keyboard covers. */
+body.keyboard-open .cards-popup {
+  z-index: auto;
+  align-items: flex-start;
+  padding: 8px 16px;
+}
+
+body.keyboard-open .cards-popup-panel {
+  flex-direction: column-reverse;
+}
+
 /* ------------------------------------------------------------- card lookup */
 
 .lookup-header {
@@ -558,12 +658,14 @@ body.keyboard-open .lookup-results {
 /* --------------------------------------------------------------- scrollbars */
 
 #view-random-card ::-webkit-scrollbar,
-#view-card-lookup ::-webkit-scrollbar {
+#view-card-lookup ::-webkit-scrollbar,
+.cards-popup ::-webkit-scrollbar {
   width: 8px;
 }
 
 #view-random-card ::-webkit-scrollbar-thumb,
-#view-card-lookup ::-webkit-scrollbar-thumb {
+#view-card-lookup ::-webkit-scrollbar-thumb,
+.cards-popup ::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.18);
 }
