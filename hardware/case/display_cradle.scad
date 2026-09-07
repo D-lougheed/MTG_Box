@@ -70,12 +70,19 @@ window_h = active_h + window_margin * 2;
 // boss centres only half a wall out, so each boss was half-eaten by the panel
 // pocket and still overhung the outer edge - visible the moment it was
 // rendered, invisible in the echoed dimensions.
+//
+// They go beyond the panel's SHORT ends, two per end, rather than at the four
+// corners. Corners cost boss diameter on both axes; the printer this mounts to
+// measures 112mm across its narrow face, and a corner layout put the cradle at
+// 125.8mm - overhanging by 7mm a side. Ends-only keeps the narrow axis to the
+// panel plus two walls and spends the width on the long axis, where the
+// printer has 220mm to give.
 boss_inset = boss_d / 2 + 0.6;
 boss_dx = pocket_w / 2 + boss_inset;
-boss_dy = pocket_h / 2 + boss_inset;
+boss_dy = pocket_h / 4;          // paired across the short axis, inside it
 
 outer_w  = (boss_dx + boss_d / 2 + wall) * 2;
-outer_h  = (boss_dy + boss_d / 2 + wall) * 2;
+outer_h  = pocket_h + wall * 2;
 
 module boss_positions() {
   for (x = [-1, 1], y = [-1, 1]) translate([x * boss_dx, y * boss_dy, 0]) children();

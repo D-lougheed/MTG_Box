@@ -18,9 +18,15 @@ That full scope is a platform, not a feature, so it is decomposed into five slic
 | Display | 7" DSI, 800x480 IPS, capacitive touch (~2 point), 15-pin 1.0 mm FPC via 22-to-15 adapter |
 | Printer | miemieyo M4202 / M4201, 4x6 direct thermal, 203 DPI, monochrome, USB, self-powered |
 
-**Printer power and size, from the M4202 manual (recorded 2026-09-07):** the
-supply is **AC 100-240V in, DC 24V 2.5A out (60W)**, and the body is
-**252 x 180 x 152 mm**, 1.36 kg.
+**Printer power and size (recorded 2026-09-07).** The supply is **AC 100-240V
+in, DC 24V 2.5A out (60W)**, from the M4202 manual.
+
+The body is **220 x 112 x 102 mm — measured on the unit**, not from the manual,
+which gives 252 x 180 x 152 (almost certainly the packed carton, or a different
+variant). The measured figure is the one the enclosure is built to; the
+discrepancy is recorded because this is a rebadged OEM printer and its paper
+documentation has now been wrong about something twice — the first being the
+`GEZHI` / `Poskey` identity mismatch in item 7 below.
 
 Both figures matter for the enclosure work. The 24V rules out running the Pi
 from the printer's supply without a buck converter, and the 60W budget is sized
