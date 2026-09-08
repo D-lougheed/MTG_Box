@@ -117,15 +117,23 @@ rear_window_w = 46.0;
 flange_border = 14.0;
 mount_pad_d   = 14.0;
 
-// Clearance for the printer's button IF it falls under that remaining 14mm
-// border. Anything in the middle of the top face is already clear.
+// Clearance for the printer's button. Measured on the machine: 84mm from the
+// centreline, 43.7mm from the front face and 68mm from the back (those sum to
+// 111.7 against a 112mm depth, so both are to the button's centre), 22mm wide,
+// on the RIGHT-HAND SIDE as you stand in front of the machine.
 //
-// MEASUREMENT NEEDED - button_d stays 0 (no cut) until the button's position is
-// known. Give it from the centre of the printer's top face: +x to the right and
-// +y toward the front, both looking at the machine from the front.
-button_d      = 0.0;
-button_x      = 0.0;
-button_y      = 0.0;
+// Right-as-you-face-it is NEGATIVE x here. The model looks down on the top
+// face with the printer's front at +y, and a viewer standing at the front and
+// looking into the machine has their right hand toward -x. Getting that
+// backwards puts the notch on the wrong side of an otherwise symmetric part,
+// so the drill template carries the same hole - lay it on the printer and the
+// hole either sits over the button or it does not.
+//
+// It needs cutting: the button spans |x| 73 to 95, and the frame's border is
+// material from 80.45 to 94.45. The border sits right across it.
+button_d      = 30.0;   // 22mm button plus 4mm of clearance all round
+button_x      = -84.0;
+button_y      =  12.2;
 
 part = "cradle";        // "cradle" | "retainer" | "riser" | "both"
                         // "template" (paper, panel fit) | "drill" (printer top)
@@ -154,10 +162,33 @@ window_h = active_h + window_margin * 2;
 // printer has 220mm to give.
 boss_inset = boss_d / 2 + 0.6;
 boss_dx = pocket_w / 2 + boss_inset;
-boss_dy = pocket_h / 4;          // paired across the short axis, inside it
+
+// A THIRD of the pocket, not a quarter. At a quarter the bosses sat at y=25.7,
+// spanning 21.7 to 29.7 - and the riser's own side window reaches y=24.48, so
+// it was taking a 2.78mm bite out of each of the four bosses. Their wall is
+// only (8 - 3.4)/2 = 2.3mm thick, so that bite went straight through into the
+// screw hole: the fastener carrying the whole stack would have been running
+// down an open channel for most of its length. The button notch then made it
+// worse. Neither shows up in a dimension; both show up in the asserts below.
+boss_dy = pocket_h / 3;
 
 outer_w  = (boss_dx + boss_d / 2 + wall) * 2;
 outer_h  = pocket_h + wall * 2;
+
+side_window_h = outer_h * 0.45;
+
+// The two clearances a dimension check does not catch, because nothing here is
+// wrong on its own - the bosses, the side windows and the button notch are all
+// fine individually, and only their overlap is the problem. These have to live
+// below outer_h rather than up with the parameters they guard: referencing it
+// before it is derived silently evaluates to undefined, and an assert on
+// undefined fails every render.
+assert(boss_dy - boss_d / 2 > side_window_h / 2,
+       "side window cuts into the retainer bosses - raise boss_dy");
+assert(button_d == 0 ||
+       (abs(boss_dy - button_y) > (boss_d + button_d) / 2 &&
+        abs(-boss_dy - button_y) > (boss_d + button_d) / 2),
+       "button notch cuts into a retainer boss - move boss_dy or narrow button_d");
 
 module boss_positions() {
   for (x = [-1, 1], y = [-1, 1]) translate([x * boss_dx, y * boss_dy, 0]) children();
@@ -233,6 +264,27 @@ module template() {
 
 module mount_positions() {
   for (x = [-1, 1], y = [-1, 1]) translate([x * mount_dx / 2, y * mount_dy / 2, 0]) children();
+}
+
+// The button opening runs out through the nearest edge rather than being a
+// closed hole. This button's outer edge is 95mm out and the flange's own edge
+// is at 94.45, so a circle would leave a half-millimetre thread of plastic
+// outboard of it - which does not print, it just strings. Cutting to the edge
+// also means the notch meets the side window above it, so there is a clear
+// path in to the button rather than a pocket under a 42mm skirt.
+//
+// Nearest edge is worked out rather than given, so the parameter stays honest
+// if the button on some later machine is near the front or the back instead.
+module button_cut(h = flange_t + 8) {
+  if (button_d > 0) {
+    out_x = abs(button_x) / (outer_w / 2) >= abs(button_y) / (outer_h / 2);
+    hull() {
+      translate([button_x, button_y, -1]) cylinder(h = h, d = button_d);
+      translate([out_x ? sign(button_x) * (outer_w / 2 + button_d) : button_x,
+                 out_x ? button_y : sign(button_y) * (outer_h / 2 + button_d), -1])
+        cylinder(h = h, d = button_d);
+    }
+  }
 }
 
 // Each mount screw needs a landing, and opening the flange's middle took it
@@ -311,11 +363,10 @@ module riser() {
     // Sides, for air.
     for (side = [-1, 1])
       translate([side * (outer_w / 2), 0, riser_h / 2 + flange_t / 2])
-        cube([riser_wall * 4, outer_h * 0.45, riser_h - flange_t - 6], center = true);
+        cube([riser_wall * 4, side_window_h, riser_h - flange_t - 6], center = true);
 
-    // The printer's button, if it falls under the frame.
-    if (button_d > 0)
-      translate([button_x, button_y, -1]) cylinder(h = flange_t + 2, d = button_d);
+    // The printer's button. See button_d above.
+    button_cut();
   }
 }
 
@@ -329,6 +380,16 @@ module drill_template() {
     // A window through the middle so the printer's own features stay visible
     // while the template is being lined up.
     rounded_plate(mount_dx - 30, mount_dy - 30, 6, r = 4);
+
+    // The button, at the same coordinates the riser cuts it. This is the
+    // check on that sign: lay the template on the printer and this either
+    // lands on the button or it is on the wrong side, for the price of one
+    // thin plate rather than a riser.
+    button_cut(h = 4);
+
+    // Which way round it goes. A guide that can be laid upside down is a guide
+    // that will be - notch toward the front.
+    translate([0, printer_d / 2 - 3, -1]) cylinder(h = 4, d = 14);
   }
 }
 

@@ -114,6 +114,41 @@ Strength was never the constraint anywhere on this arm — even at 102 mm reach
 it sees under 1 MPa against PETG's ~50 MPa. The joints and the print
 orientation are the whole game.
 
+## The button
+
+Measured on the machine: 84 mm from the centreline, 43.7 mm from the front face
+and 68 mm from the back, 22 mm wide, on the **right-hand side as you face the
+printer**. Those two depth figures sum to 111.7 against a 112 mm body, so both
+are to the button's centre — which puts it 12.2 mm forward of the middle.
+
+It needed cutting. The button spans 73–95 mm out from the centreline and the
+frame's border is material from 80.45 to 94.45, so the border sat right across
+it. The cut is an **open notch, not a hole**: the button's outer edge is 95 mm
+out and the flange's own edge is at 94.45, so a circle would have left a
+half-millimetre thread of plastic outboard of it — which doesn't print, it just
+strings. Running the cut out through the edge also joins it to the side window
+above, so there's a clear path in rather than a pocket under a 42 mm skirt.
+
+Two things worth knowing about that notch:
+
+- **Right-as-you-face-it is negative x in the model.** The model looks down on
+  the top face with the printer's front at +y, so a viewer standing at the
+  front has their right hand toward −x. `drill.stl` carries the same cut from
+  the same parameter, so laying it on the printer either puts the hole over the
+  button or shows the sign is wrong — for the price of one thin plate. It also
+  has a notch on its front edge, because a guide that can be laid upside down
+  is a guide that will be.
+
+- **It forced the retainer bosses to move.** At `pocket_h/4` they sat at
+  y = 25.7, spanning 21.7 to 29.7, and the notch reaches 27.2. Checking that
+  turned up a second overlap that had nothing to do with the button: the
+  riser's own side windows reach y = 24.48, so they were already taking a
+  2.78 mm bite out of each of the four bosses — and the boss wall is only
+  (8 − 3.4)/2 = 2.3 mm thick, so that bite went through into the screw hole.
+  The fastener carrying the whole stack would have run down an open channel for
+  most of its length. `boss_dy` is now `pocket_h/3`, clear of both, and two
+  `assert()`s in the file fail the render if either clearance is lost again.
+
 ## The rear slot, and why the roll stays high
 
 The printer's label slot is **56 mm** above the table. With the spindle at
@@ -157,9 +192,5 @@ stock here is 3in = 76.2), core 25.4 (1in — 38mm is the other common size).
 Measure a real roll and change those three numbers. `roll_width` is not just
 cosmetic: it sets where the leg sits, which is what centres the roll.
 
-**The printer's button.** The flange's open middle clears anything on the
-central 161 x 81 mm of the top face, so this only matters if the button falls
-under the 14 mm border. If it does, set `button_d` to something a finger fits
-through and give `button_x` / `button_y` from the centre of the top face — +x
-to the right, +y toward the front, looking at the machine from the front.
-`button_d` is 0 (no cut) until that is known.
+That is the only outstanding measurement — the button is done, and the four
+mount screws are settled now that the top shell is being drilled.
