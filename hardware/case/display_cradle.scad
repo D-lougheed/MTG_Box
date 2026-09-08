@@ -294,7 +294,10 @@ module mount_pads() {
     hull() {
       translate([x * mount_dx / 2, y * mount_dy / 2, 0])
         cylinder(h = flange_t, d = mount_pad_d);
-      translate([x * mount_dx / 2, y * (outer_h / 2 - 4), 0])
+      // Tangent to the outer edge, not 4mm short of it: the pad has a 7mm
+      // radius of its own, so "outer_h/2 - 4" put its far side 3mm PAST the
+      // flange and overhanging the printer's front and back edges.
+      translate([x * mount_dx / 2, y * (outer_h / 2 - mount_pad_d / 2), 0])
         cylinder(h = flange_t, d = mount_pad_d);
     }
 }
