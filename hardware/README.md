@@ -82,12 +82,6 @@ wrong, and a failed 4-hour print is not.
 stock here is 3in = 76.2), core 25.4 (1in — 38mm is the other common size).
 Measure a real roll and change those three numbers.
 
-**Where the rear label slot sits.** `spindle_drop` is 0, which hangs a full roll
-between roughly 70 and 176 mm above the table — chosen to clear the printer's
-rear connectors vertically rather than reaching further back to clear them
-horizontally, because reach is what tips the machine. Increase it to hang the
-roll lower once the slot's real height is known.
-
 **Where the printer's top shell will take a screw.** The riser's four holes are
 on a 150 x 74 pattern; `drill.stl` puts them in the right place, but it assumes
 there is something behind the shell worth screwing into. Check what the top
@@ -107,6 +101,32 @@ Going up instead of back costs nothing: at 70 mm the roll hangs clear above a
 into the slot, which is the path it wants to take anyway.
 
 Strength was never the constraint. Even at 102 mm the arm sees under 1 MPa
-against PLA's ~50 MPa. **Print the arm on its side** — standing it up puts the
+against PETG's ~50 MPa. **Print the arm on its side** — standing it up puts the
 layer lines square across the bending stress at the root, which is the one way
-to break a part loaded this lightly.
+to break a part loaded this lightly. PETG bonds between layers much better than
+PLA, so this matters less than it would otherwise, but it costs nothing to get
+right.
+
+## The rear slot, and why the roll stays high
+
+The printer's label slot is **56 mm** above the table. With the spindle at
+123 mm the label leaves the top of a full roll at 70.5 mm and drops 14.5 mm
+forward into the slot; as the roll empties the pay-off point rises and the drop
+grows to 54.3 mm. Downhill throughout, which is the way the stock wants to feed.
+
+Lowering the roll to bring a full one level with the slot would put the spindle
+at 108.5 mm and hang the roll from 56 to 161 mm — overlapping the 102 mm-tall
+printer body at just 17.5 mm behind it, which is where the USB and power tails
+live. That reintroduces exactly the clash the high mount exists to avoid, so
+`spindle_drop` stays at 0.
+
+## Material
+
+**PETG.** Two reasons, one of which is not optional: the assembly sits directly
+above a thermal print head, and PETG softens around 80 °C against PLA's ~60 °C.
+A PLA cradle would be a slow creep problem, not a sudden one.
+
+Tolerances in both `.scad` files are set for PETG, which extrudes slightly
+fatter than PLA and closes holes up: `fit` is 0.40 (not 0.30), M3 clearance
+holes are 3.40, and self-tapping pilots are a separate `screw_pilot` at 2.60 so
+that opening a clearance hole can't silently loosen every pilot with it.

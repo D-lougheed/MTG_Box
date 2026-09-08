@@ -6,14 +6,16 @@
 // back. No threading a bar through a frame one-handed.
 //
 // Supported from one side only. A full 3in roll is about 500g, which at this
-// reach is roughly 0.3 Nm - under 1 MPa in the arm's section against PLA's
+// reach is roughly 0.3 Nm - under 1 MPa in the arm's section against PETG's
 // ~50 MPa. Strength was never the question here; the bolted joint and the
 // print orientation are, which is why the joint is four screws in a rectangle
 // and why the note below matters.
 //
 // PRINT THE ARM LYING ON ITS SIDE (largest flat face on the bed). Standing it
 // up puts the layer lines square across the bending stress at the root, which
-// is the one way to make a part this lightly loaded fail.
+// is the one way to make a part this lightly loaded fail. PETG bonds between
+// layers far better than PLA, so this is less critical than it would be - but
+// it costs nothing to orient it correctly.
 //
 //   openscad -o arm.stl -D 'part="arm"' label_spool.scad
 //   openscad -o cap.stl -D 'part="cap"' label_spool.scad
@@ -29,7 +31,7 @@ core_d       =  25.4;   // 1in core; 38mm (1.5in) is the other common size
 // These four must match display_cradle.scad.
 arm_mount_dx = 22.0;
 arm_mount_dz = 18.0;
-screw_d      =  3.20;
+screw_d      =  3.40;   // M3 clearance, opened up for PETG
 riser_h      = 42.0;
 
 // ------------------------------------------------------------------- geometry
@@ -54,16 +56,25 @@ arm_reach    = 70.0;
 arm_w        = 12.0;    // section across the bend
 arm_h        = 25.0;    // section in the bending direction
 
-// Spindle axis relative to the mounting plate's centre. Zero puts it level
-// with the plate; increase it to hang the roll lower once the rear slot's
-// actual height is known.
+// Spindle axis relative to the mounting plate's centre. Stays at zero, and
+// that is now a measured conclusion rather than a placeholder: the printer's
+// rear label slot is 56mm above the table, and with the spindle at 123mm the
+// label pays off the top of a full roll at 70.5mm and drops 14.5mm forward
+// into it - rising to a 54.3mm drop as the roll empties. Downhill the whole
+// way, which is the direction the stock wants to go.
+//
+// Dropping the roll so a FULL roll pays off level with the slot would put the
+// spindle at 108.5mm and the roll spanning 56-161mm, i.e. overlapping the
+// printer body's 0-102mm at only 17.5mm behind it - straight into the USB and
+// power tails. That is precisely the collision the high mount was chosen to
+// avoid, so lowering it trades a harmless 14.5mm drop for a cable clash.
 spindle_drop = 0.0;
 
 spindle_d    = core_d - 1.2;    // turns freely inside the core
 spindle_len  = roll_width + 14; // roll plus room for the cap
 cap_d        = spindle_d + 14;
 cap_t        =  5.0;
-cap_screw_d  =  3.20;
+cap_screw_d  =  3.40;
 
 part = "arm";           // "arm" | "cap" | "both"
 
@@ -107,7 +118,7 @@ module arm() {
 
     // Axial pilot for the retaining cap.
     translate([arm_w / 2 + spindle_len - 12, plate_t / 2 + arm_reach, -spindle_drop])
-      rotate([0, 90, 0]) cylinder(h = 14, d = cap_screw_d - 0.6);
+      rotate([0, 90, 0]) cylinder(h = 14, d = 2.60);   // M3 self-tapping into PETG
 
     // Hollow the spindle. It is the longest unsupported run on the part and
     // solid bar adds mass at the worst place for a cantilever without adding

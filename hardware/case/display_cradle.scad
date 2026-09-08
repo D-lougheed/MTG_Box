@@ -28,9 +28,14 @@ active_h     =  87.02;
 panel_hole_dx = 154.89;
 panel_hole_dy =  91.92;
 
-// Print tolerances. 0.3 is a comfortable slip fit on a well-tuned FDM printer;
-// raise it if the panel is tight, lower it if it rattles.
-fit          = 0.30;
+// Print tolerances, set for PETG. It lays down slightly fatter than PLA and
+// holes come out tighter, so a clearance that suits PLA gives a pocket the
+// panel has to be forced into - and this pocket holds bonded glass.
+//
+// PETG's other property matters more than it looks: it softens around 80C
+// against PLA's ~60C, and this whole assembly sits on top of a thermal print
+// head. PLA would have been the wrong material here regardless of fit.
+fit          = 0.40;
 wall         = 3.00;
 floor_t      = 2.40;
 
@@ -44,7 +49,8 @@ window_margin = 1.60;   // frame overlap onto the black border, per side
 
 // Rear retainer.
 retainer_t    = 3.00;
-screw_d       = 3.20;   // M3 clearance
+screw_d       = 3.40;   // M3 clearance, opened up for PETG
+screw_pilot   = 2.60;   // M3 self-tapping into PETG
 screw_head_d  = 6.20;
 boss_d        = 8.00;
 
@@ -161,7 +167,7 @@ module cradle() {
 
     // Screw pilots for the retainer.
     boss_positions() translate([0, 0, -1])
-      cylinder(h = floor_t + panel_t + fit + 2, d = screw_d - 0.6);
+      cylinder(h = floor_t + panel_t + fit + 2, d = screw_pilot);
   }
 }
 
@@ -252,7 +258,7 @@ module riser() {
     // Pilot holes through the back wall and into the arm anchors.
     for (side = [-1, 1])
       arm_anchor_positions(side) translate([0, 0, -riser_wall - 1])
-        cylinder(h = arm_boss_len + riser_wall + 2, d = screw_d - 0.6);
+        cylinder(h = arm_boss_len + riser_wall + 2, d = screw_pilot);
 
     // Cable and air openings. The back one is wide because everything - USB to
     // the printer, USB-C power, and the label path - is behind the machine.
