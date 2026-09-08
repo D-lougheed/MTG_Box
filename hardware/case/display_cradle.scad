@@ -89,21 +89,43 @@ mount_screw_d = 3.40;   // M3 clearance into a tapped shell
 mount_dx      = 150.0;
 mount_dy      =  74.0;
 
-// Anchor pads for the label arm, inside the riser's back wall. Provided at
-// both ends so the arm can go on whichever side suits the bench - the arm
-// itself is handed only by which pair it bolts to.
+// Anchor pads for the label arm, on the CENTRE of the riser's back wall.
 //
-// A full 3in roll is about 500g, which at this reach is roughly 0.3 Nm and
-// well under a tenth of a MPa in a 12x25 section. Strength is not the
-// question; the joint is, so it is four screws in a rectangle rather than two
-// in a line, which is what actually resists the roll trying to rotate the
-// bracket off the wall.
-arm_mount_x   = 76.0;   // centre of the pair, from the riser's centreline
-arm_mount_dx  = 22.0;
+// They used to sit at the two ends, which hung the roll's centre about 129mm
+// off the printer's centreline - past the corner of a 220mm machine - and fed
+// the web into the rear slot at an angle. Centred, the roll's centre of mass
+// is directly behind the bolt pattern, so the 500g load is pure bending at
+// 70mm reach with no twisting couple about the printer at all.
+//
+// Four screws in a rectangle rather than two in a line: the vertically spread
+// pair is what resists the roll levering the plate's top off the wall.
+arm_mount_dx  = 52.0;
 arm_mount_dz  = 18.0;
 arm_mount_z   = 21.0;
 arm_boss_d    =  8.0;
 arm_boss_len  = 11.0;
+
+// Solid column on the back wall carrying those anchors. The rear cable opening
+// splits into two windows either side of it - which suits the cabling anyway,
+// since the USB lead and the USB-C power lead go to opposite ends of the Pi.
+arm_column_w  = 76.0;
+rear_window_w = 46.0;
+
+// The flange is a frame, not a plate. A solid one covered essentially the whole
+// of the printer's top face - it would have sat on the printer's own button,
+// blocked air under the Pi, and cost ~60 cm3 of filament to do it.
+flange_border = 14.0;
+mount_pad_d   = 14.0;
+
+// Clearance for the printer's button IF it falls under that remaining 14mm
+// border. Anything in the middle of the top face is already clear.
+//
+// MEASUREMENT NEEDED - button_d stays 0 (no cut) until the button's position is
+// known. Give it from the centre of the printer's top face: +x to the right and
+// +y toward the front, both looking at the machine from the front.
+button_d      = 0.0;
+button_x      = 0.0;
+button_y      = 0.0;
 
 part = "cradle";        // "cradle" | "retainer" | "riser" | "both"
                         // "template" (paper, panel fit) | "drill" (printer top)
@@ -213,10 +235,22 @@ module mount_positions() {
   for (x = [-1, 1], y = [-1, 1]) translate([x * mount_dx / 2, y * mount_dy / 2, 0]) children();
 }
 
-// Four anchor points per end, on the inside of the back wall.
-module arm_anchor_positions(side) {
+// Each mount screw needs a landing, and opening the flange's middle took it
+// away. These run a pad from the screw out to the frame at the nearest edge.
+module mount_pads() {
+  for (x = [-1, 1], y = [-1, 1])
+    hull() {
+      translate([x * mount_dx / 2, y * mount_dy / 2, 0])
+        cylinder(h = flange_t, d = mount_pad_d);
+      translate([x * mount_dx / 2, y * (outer_h / 2 - 4), 0])
+        cylinder(h = flange_t, d = mount_pad_d);
+    }
+}
+
+// Four anchor points, centred on the inside of the back wall.
+module arm_anchor_positions() {
   for (dx = [-1, 1], dz = [-1, 1])
-    translate([side * arm_mount_x + dx * arm_mount_dx / 2,
+    translate([dx * arm_mount_dx / 2,
                -outer_h / 2 + riser_wall,
                arm_mount_z + dz * arm_mount_dz / 2])
       rotate([-90, 0, 0]) children();
@@ -228,8 +262,15 @@ module arm_anchor_positions(side) {
 module riser() {
   difference() {
     union() {
-      // Bottom flange, screwed to the printer's top shell.
-      rounded_plate(outer_w, outer_h, flange_t);
+      // Bottom flange - a frame, not a plate. See flange_border above.
+      difference() {
+        rounded_plate(outer_w, outer_h, flange_t);
+        translate([0, 0, -1])
+          rounded_plate(outer_w - flange_border * 2, outer_h - flange_border * 2,
+                        flange_t + 2, r = 3);
+      }
+      mount_pads();
+
       // Skirt.
       difference() {
         rounded_plate(outer_w, outer_h, riser_h);
@@ -240,34 +281,41 @@ module riser() {
       // corner carries cradle, retainer and riser together.
       boss_positions() cylinder(h = riser_h, d = boss_d);
 
-      // Label-arm anchors. They sit at the ends of the back wall, outside the
-      // Pi's 85mm width, so they take nothing away from the board's space.
-      for (side = [-1, 1])
-        arm_anchor_positions(side) cylinder(h = arm_boss_len, d = arm_boss_d);
+      // Label-arm anchors, centred on the back wall.
+      arm_anchor_positions() cylinder(h = arm_boss_len, d = arm_boss_d);
     }
 
     // Screws up into the cradle.
     boss_positions() translate([0, 0, -1]) cylinder(h = riser_h + 2, d = screw_d);
 
-    // Into the printer's top shell.
+    // Down into the printer's top shell.
     mount_positions() {
       translate([0, 0, -1]) cylinder(h = flange_t + 2, d = mount_screw_d);
       translate([0, 0, flange_t - 1.4]) cylinder(h = 2, d = screw_head_d);
     }
 
-    // Pilot holes through the back wall and into the arm anchors.
-    for (side = [-1, 1])
-      arm_anchor_positions(side) translate([0, 0, -riser_wall - 1])
-        cylinder(h = arm_boss_len + riser_wall + 2, d = screw_pilot);
+    // Pilots through the back wall into the arm anchors.
+    arm_anchor_positions() translate([0, 0, -riser_wall - 1])
+      cylinder(h = arm_boss_len + riser_wall + 2, d = screw_pilot);
 
-    // Cable and air openings. The back one is wide because everything - USB to
-    // the printer, USB-C power, and the label path - is behind the machine.
+    // Front: one wide opening.
+    translate([0, outer_h / 2, riser_h / 2 + flange_t / 2])
+      cube([outer_w * 0.62, riser_wall * 4, riser_h - flange_t - 6], center = true);
+
+    // Back: two windows either side of the arm's anchor column.
     for (side = [-1, 1])
-      translate([0, side * (outer_h / 2), riser_h / 2 + flange_t / 2])
-        cube([outer_w * 0.62, riser_wall * 4, riser_h - flange_t - 6], center = true);
+      translate([side * (arm_column_w / 2 + rear_window_w / 2), -outer_h / 2,
+                 riser_h / 2 + flange_t / 2])
+        cube([rear_window_w, riser_wall * 4, riser_h - flange_t - 6], center = true);
+
+    // Sides, for air.
     for (side = [-1, 1])
       translate([side * (outer_w / 2), 0, riser_h / 2 + flange_t / 2])
         cube([riser_wall * 4, outer_h * 0.45, riser_h - flange_t - 6], center = true);
+
+    // The printer's button, if it falls under the frame.
+    if (button_d > 0)
+      translate([button_x, button_y, -1]) cylinder(h = flange_t + 2, d = button_d);
   }
 }
 
@@ -300,3 +348,8 @@ echo(str("window: ", window_w, " x ", window_h,
          " mm (active area ", active_w, " x ", active_h, ")"));
 echo(str("total depth with Pi behind: ",
          floor_t + panel_t + fit + rear_clearance, " mm"));
+echo(str("flange frame: ", flange_border, "mm border; middle open ",
+         outer_w - flange_border * 2, " x ", outer_h - flange_border * 2,
+         " mm over the printer's top"));
+echo(str("arm anchors: ", arm_mount_dx, " x ", arm_mount_dz,
+         " centred on the back wall, ", arm_mount_z, " mm up"));
