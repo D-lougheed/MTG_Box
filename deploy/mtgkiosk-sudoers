@@ -1,5 +1,18 @@
-# Lets the mtgkiosk service (running as `admin`) restart itself after
-# pulling an update, without hitting an interactive polkit prompt that a
-# detached systemd-run job can never answer. Scoped to exactly this one
-# command - nothing else is granted.
-admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart mtgkiosk.service
+# Lets the mtgkiosk service (running as `admin`) restart itself after pulling an
+# update, and shut the appliance down from the UI.
+#
+# Both grants are for the OUTER `systemd-run`, not for `systemctl`. systemd-run
+# in system mode calls StartTransientUnit on the system manager, which polkit
+# gates behind auth_admin_keep, and a `User=admin` system service has no login
+# session for polkit to prompt. Granting only the inner systemctl - which is all
+# this file did until 2026-09-11 - is useless: systemd-run is the first thing
+# that needs privilege, so it fails first and the inner command never runs.
+#
+# sudo matches argv literally and neither line uses a wildcard, so these permit
+# exactly two command lines and nothing else. In particular they do NOT permit
+# arbitrary `systemd-run`, which would be equivalent to unrestricted root.
+#
+# src/mtgkiosk/app.py must match these character-for-character;
+# tests/test_privileged_commands.py fails if the two ever drift apart.
+admin ALL=(root) NOPASSWD: /usr/bin/systemd-run --on-active=2 /usr/bin/systemctl restart mtgkiosk.service
+admin ALL=(root) NOPASSWD: /usr/bin/systemd-run --on-active=2 /usr/bin/systemctl poweroff

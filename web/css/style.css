@@ -386,6 +386,40 @@ h2 {
 #view-settings-printer h2,
 #view-settings-cards h2,
 #view-settings-update h2,
-#view-settings-display h2 {
+#view-settings-display h2,
+#view-settings-power h2 {
   margin-bottom: 12px;
+}
+
+/* Shutdown is destructive and irreversible from the touchscreen, so both the
+   button that arms it and the one that commits carry the danger colour rather
+   than the accent every other action uses. Cancel stays a plain surface: the
+   safe option should not compete for the eye. */
+#power-off-button,
+#power-off-yes {
+  margin-top: 16px;
+  align-self: flex-start;
+  padding: 14px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #f2f2f2;
+}
+
+#power-off-cancel {
+  margin-top: 16px;
+  margin-left: 8px;
+  padding: 14px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+#power-status {
+  font-size: 16px;
+  color: var(--muted);
+  max-width: 560px;
 }

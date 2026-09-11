@@ -164,8 +164,12 @@ def test_update_apply_returns_502_when_restart_scheduling_fails(monkeypatch):
         def __init__(self, returncode):
             self.returncode = returncode
 
+    # Matched against the constant rather than a literal. This test previously
+    # looked for the bare string "systemd-run" in the argv list, which stopped
+    # matching the moment the command gained an absolute path - and a matcher
+    # that silently stops matching turns a failure test into a no-op.
     def fake_run(args, *a, **kw):
-        if "systemd-run" in args:
+        if list(args) == app_module.RESTART_COMMAND:
             return FakeResult(returncode=1)
         return FakeResult(returncode=0)
 
@@ -175,6 +179,39 @@ def test_update_apply_returns_502_when_restart_scheduling_fails(monkeypatch):
     response = client.post("/api/update/apply")
 
     assert response.status_code == 502
+
+
+def test_power_off_returns_200_and_schedules_shutdown(monkeypatch):
+    calls = []
+
+    class FakeResult:
+        returncode = 0
+
+    def fake_run(args, *a, **kw):
+        calls.append(list(args))
+        return FakeResult()
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+
+    response = TestClient(app_module.app).post("/api/power/off")
+
+    assert response.status_code == 200
+    assert response.json() == {"poweringOff": True}
+    assert calls == [app_module.POWEROFF_COMMAND]
+
+
+def test_power_off_returns_502_when_scheduling_fails(monkeypatch):
+    class FakeResult:
+        returncode = 1
+
+    monkeypatch.setattr(app_module.subprocess, "run", lambda args, *a, **kw: FakeResult())
+
+    response = TestClient(app_module.app).post("/api/power/off")
+
+    assert response.status_code == 502
+    # The one recovery step needs root, which is exactly what is missing here,
+    # so the message has to name it rather than leaving the reader guessing.
+    assert "install.sh" in response.json()["detail"]
 
 
 def test_wifi_scan_returns_networks(monkeypatch):

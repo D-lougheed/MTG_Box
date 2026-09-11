@@ -151,6 +151,37 @@ def get_update_check() -> dict:
     }
 
 
+# Both of these have to outlive the thing they are about to destroy: restarting
+# or powering off tears down this very process, so the work cannot be done by a
+# child of it. systemd-run hands it to a transient unit owned by the system
+# manager, and --on-active=2 leaves time for the HTTP response to reach the
+# browser before the ground goes.
+#
+# They MUST begin with sudo. systemd-run in system mode calls StartTransientUnit
+# on the system manager, which polkit gates behind auth_admin_keep - and a
+# User=admin system service has no login session for polkit to prompt. Putting
+# sudo on the inner systemctl instead (which is what this did until 2026-09-11)
+# is one level too deep: the outer systemd-run is the first thing that needs
+# privilege, so it hit the same polkit wall, the transient unit was never
+# created, and the inner command never ran at all. That is exactly why
+# "Install update & restart" pulled the update but never restarted.
+#
+# sudo matches argv literally, so these must be character-for-character what
+# deploy/mtgkiosk-sudoers grants. tests/test_privileged_commands.py pins them to
+# that file so the two cannot drift apart again.
+_SCHEDULED = ["sudo", "/usr/bin/systemd-run", "--on-active=2", "/usr/bin/systemctl"]
+RESTART_COMMAND = [*_SCHEDULED, "restart", "mtgkiosk.service"]
+POWEROFF_COMMAND = [*_SCHEDULED, "poweroff"]
+
+# Refreshing the sudoers grant needs root - precisely what is unavailable when
+# this fails - so the message names the one manual step that recovers it rather
+# than leaving the reader to guess.
+_STALE_GRANT_HINT = (
+    "could not be scheduled; the sudoers grant is probably stale - "
+    "run deploy/install.sh on the Pi once"
+)
+
+
 @app.post("/api/update/apply")
 def post_update_apply() -> dict:
     try:
@@ -163,23 +194,29 @@ def post_update_apply() -> dict:
     if result.returncode != 0:
         logger.error("pip install failed after update pull (returncode %s); aborting restart", result.returncode)
         raise HTTPException(status_code=502, detail="dependency install failed after update; restart aborted")
-    # A plain (non-sudo) restart here would hit an interactive polkit prompt
-    # that a detached systemd-run job can never answer - it depends on the
-    # NOPASSWD sudoers rule installed by deploy/install.sh
-    # (deploy/mtgkiosk-sudoers), scoped to exactly this command.
-    schedule_result = subprocess.run(
-        ["systemd-run", "--on-active=2", "sudo", "/usr/bin/systemctl", "restart", "mtgkiosk.service"]
-    )
+    schedule_result = subprocess.run(RESTART_COMMAND)
     if schedule_result.returncode != 0:
         logger.error(
             "failed to schedule restart (returncode %s); update pulled but service was not restarted",
             schedule_result.returncode,
         )
-        raise HTTPException(
-            status_code=502,
-            detail="update applied but restart could not be scheduled; restart the service manually",
-        )
+        raise HTTPException(status_code=502, detail=f"update applied but the restart {_STALE_GRANT_HINT}")
     return {"restarting": True}
+
+
+@app.post("/api/power/off")
+def post_power_off() -> dict:
+    """Shut the appliance down cleanly.
+
+    Without this the only way to switch the kiosk off is at the wall, which
+    hard-cuts a running Pi mid-write to the SD card - and behind that card sit
+    the card database and a multi-gigabyte image cache that cost hours to build.
+    """
+    result = subprocess.run(POWEROFF_COMMAND)
+    if result.returncode != 0:
+        logger.error("failed to schedule poweroff (returncode %s)", result.returncode)
+        raise HTTPException(status_code=502, detail=f"shutdown {_STALE_GRANT_HINT}")
+    return {"poweringOff": True}
 
 
 @app.get("/api/wifi/scan")

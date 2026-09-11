@@ -9,6 +9,7 @@ const VIEW_HOOKS = {
   "settings-cards": "onSettingsShown",
   "settings-update": "onSettingsShown",
   "settings-display": "onSettingsShown",
+  "settings-power": "onPowerShown",
   "wifi": "onWifiShown",
   "life-counter": "onLifeCounterShown",
   "random-card": "onRandomCardShown",
@@ -434,6 +435,56 @@ document.getElementById("update-apply-button").addEventListener("click", async (
   } catch (err) {
     status.textContent = "update failed: " + firstLine(err.message);
     button.disabled = false;
+  }
+});
+
+// Shutdown is two taps, and the confirmation is re-armed on every visit to the
+// view. The confirm row is one element reused across visits, so without the
+// reset you could leave the screen mid-confirm and come back to one whose
+// primary button powers the machine off with no further asking - the same
+// class of bug as the wifi password row that stayed masked.
+function resetPowerConfirm() {
+  document.getElementById("power-off-confirm").classList.add("hidden");
+  const start = document.getElementById("power-off-button");
+  start.classList.remove("hidden");
+  start.disabled = false;
+  document.getElementById("power-off-yes").disabled = false;
+}
+
+function onPowerShown() {
+  resetPowerConfirm();
+  document.getElementById("power-status").textContent = "";
+}
+
+document.getElementById("power-off-button").addEventListener("click", (event) => {
+  event.currentTarget.classList.add("hidden");
+  document.getElementById("power-off-confirm").classList.remove("hidden");
+});
+
+document.getElementById("power-off-cancel").addEventListener("click", resetPowerConfirm);
+
+document.getElementById("power-off-yes").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const status = document.getElementById("power-status");
+  button.disabled = true;
+  status.textContent = "shutting down…";
+  try {
+    const response = await fetch("/api/power/off", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      status.textContent = "shutdown failed: " + firstLine(data.detail || response.status);
+      resetPowerConfirm();
+      return;
+    }
+    document.getElementById("power-off-confirm").classList.add("hidden");
+    // Names the thing to watch for. The screen goes dark well before the Pi has
+    // finished writing, and pulling the plug in that gap is the exact failure
+    // this button exists to avoid.
+    status.textContent =
+      "Shutting down. Wait for the green light to stop flickering, then switch off at the wall.";
+  } catch (err) {
+    status.textContent = "shutdown failed: " + firstLine(err.message);
+    resetPowerConfirm();
   }
 });
 

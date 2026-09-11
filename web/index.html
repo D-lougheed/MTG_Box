@@ -63,6 +63,10 @@
         Display
         <span class="tile-note">Buttons and shortcuts</span>
       </button>
+      <button class="tile" data-view="settings-power">
+        Power
+        <span class="tile-note">Shut down safely</span>
+      </button>
     </div>
     <button class="back-button" data-view="menu">Back</button>
   </main>
@@ -139,6 +143,27 @@
       <button class="option" data-random-button="off">Hide</button>
     </div>
     <p id="random-button-note" class="option-note"></p>
+
+    <button class="back-button" data-view="settings">Back</button>
+  </main>
+
+  <main id="view-settings-power" class="view hidden">
+    <h2>Power</h2>
+    <p class="option-note">
+      Shut down here before switching off at the wall. Cutting power to a
+      running Pi risks the SD card, and the card database and downloaded art
+      both live on it.
+    </p>
+
+    <button id="power-off-button">Shut down</button>
+
+    <div id="power-off-confirm" class="hidden">
+      <p class="option-note">Shut down now? Any game in progress is lost.</p>
+      <button id="power-off-yes">Yes, shut down</button>
+      <button id="power-off-cancel">Cancel</button>
+    </div>
+
+    <p id="power-status"></p>
 
     <button class="back-button" data-view="settings">Back</button>
   </main>
