@@ -65,8 +65,9 @@ window shoulder and a rear retainer instead, on screws that sit wholly outside
 its footprint. That also keeps it tolerant of a panel revision moving a hole.
 
 **The Pi hangs off the display, not off the case.** Per the manual the Pi bolts
-to the panel's 58 x 49 holes on the supplied copper pillars and takes 5 V from
-pogo pins through the header. So it's one sandwich, and the case only has to
+to the panel's 58 x 49 holes on the supplied copper pillars, and the panel
+takes its 5 V *from the Pi* through a pogo pin onto the header (max 510 mA).
+Power goes into the Pi's USB-C, never into the display. So it's one sandwich, and the case only has to
 hold the display; `rear_clearance` reserves depth for the board, its connectors
 and the FPC ribbon's bend radius — the ribbon is the constraint, not the board.
 
